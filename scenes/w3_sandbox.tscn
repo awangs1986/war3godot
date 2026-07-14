@@ -1,0 +1,93 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/w3/w3_sandbox.gd" id="1_sandbox"]
+[ext_resource type="Script" path="res://addons/w3kit/w3_map_world.gd" id="2_world"]
+[ext_resource type="Script" path="res://scripts/w3/w3_grid_player.gd" id="3_player"]
+[ext_resource type="Script" path="res://scripts/w3/free_fly_camera.gd" id="4_fly"]
+[ext_resource type="Resource" path="res://addons/w3kit/w3_lit_settings_preview.tres" id="5_lit"]
+
+[node name="W3Sandbox" type="Node3D"]
+script = ExtResource("1_sandbox")
+map_path = "/path/to/Warcraft.III.R/Maps/(4)LostTemple.w3m"
+lit_settings = ExtResource("5_lit")
+preview_fog = true
+
+[node name="W3MapWorld" type="Node3D" parent="."]
+script = ExtResource("2_world")
+terrain_only = false
+
+[node name="W3GridPlayer" type="CharacterBody3D" parent="."]
+visible = false
+script = ExtResource("3_player")
+
+[node name="FreeFlyCamera" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.8, 0.6, 0, -0.6, 0.8, 0, 1200, 1800)
+current = true
+fov = 55.0
+near = 1.0
+far = 20000.0
+script = ExtResource("4_fly")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.353, 0.353, 0, 0.707, 0.707, -0.5, -0.612, 0.612, 0, 2000, 0)
+shadow_enabled = true
+light_energy = 1.05
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Status" type="Label" parent="CanvasLayer"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 1100.0
+offset_bottom = 160.0
+theme_override_colors/font_color = Color(0.95, 0.95, 0.9, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 4
+theme_override_font_sizes/font_size = 16
+text = "W3 preview loading…"
+
+[node name="GotoConsole" type="PanelContainer" parent="CanvasLayer"]
+visible = false
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -72.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/GotoConsole"]
+
+[node name="Hint" type="Label" parent="CanvasLayer/GotoConsole/VBox"]
+theme_override_font_sizes/font_size = 14
+text = "` 关闭 | 输入 tile 坐标 x,y 回车跳转（例 65,64）"
+
+[node name="LineEdit" type="LineEdit" parent="CanvasLayer/GotoConsole/VBox"]
+placeholder_text = "65,64"
+caret_blink = true
+
+[node name="DirLegend" type="PanelContainer" parent="CanvasLayer"]
+offset_left = 12.0
+offset_top = 170.0
+offset_right = 320.0
+offset_bottom = 360.0
+
+[node name="DirLabel" type="Label" parent="CanvasLayer/DirLegend"]
+theme_override_colors/font_color = Color(1, 0.92, 0.85, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 15
+text = "方向约定（顶视·以红字为准）
+屏上↑北 +y=TL·TR
+屏左←西 -x    屏右→东 +x
+屏下↓南 -y=BL·BR
+
+屏面角点（goto后）：
+  TL ---- TR
+  |   tile  |
+  BL ---- BR"

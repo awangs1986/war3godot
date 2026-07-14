@@ -1,0 +1,110 @@
+[gd_scene load_steps=10 format=3 uid="uid://btown001"]
+
+[ext_resource type="Script" path="res://scripts/level_root.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/iso_camera.tscn" id="3_cam"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4_hud"]
+[ext_resource type="PackedScene" path="res://scenes/interactable.tscn" id="5_act"]
+[ext_resource type="PackedScene" path="res://scenes/obstacle.tscn" id="6_obs"]
+[ext_resource type="Script" path="res://scripts/navigation_setup.gd" id="7_nav"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(40, 1, 40)
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.28, 0.3, 0.26, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_portal"]
+albedo_color = Color(0.55, 0.12, 0.12, 1)
+emission_enabled = true
+emission = Color(0.6, 0.1, 0.1, 1)
+emission_energy_multiplier = 1.5
+
+[sub_resource type="StandardMaterial3D" id="Mat_merchant"]
+albedo_color = Color(0.55, 0.42, 0.2, 1)
+emission_enabled = true
+emission = Color(0.4, 0.3, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_block"]
+size = Vector3(1.5, 1.5, 1.5)
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.08, 0.07, 0.09, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.45, 0.42, 0.4, 1)
+ambient_light_energy = 0.7
+
+[node name="Town" type="Node3D"]
+script = ExtResource("1_level")
+is_dungeon = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.8, -0.4, 0.4, 0, 0.7, 0.7, -0.55, -0.55, 0.62, 0, 12, 0)
+light_energy = 1.1
+shadow_enabled = true
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+script = ExtResource("7_nav")
+geometry_root_path = NodePath("../Geometry")
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="Geometry"]
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("Mat_floor")
+
+[node name="CrateA" parent="Geometry" instance=ExtResource("6_obs")]
+transform = Transform3D(0.8, 0, 0, 0, 0.7, 0, 0, 0, 0.8, -5, 0, 0)
+
+[node name="CrateB" parent="Geometry" instance=ExtResource("6_obs")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 0, -4)
+
+[node name="CrateC" parent="Geometry" instance=ExtResource("6_obs")]
+transform = Transform3D(1.2, 0, 0, 0, 0.9, 0, 0, 0, 0.7, 3, 0, 5)
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 4)
+
+[node name="IsoCamera" parent="." instance=ExtResource("3_cam")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 4)
+
+[node name="HUD" parent="." instance=ExtResource("4_hud")]
+
+[node name="DungeonPortal" parent="." instance=ExtResource("5_act")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -10)
+kind = "portal_dungeon"
+prompt = "Cathedral Entrance (click / E)"
+
+[node name="Mesh" parent="DungeonPortal"]
+surface_material_override/0 = SubResource("Mat_portal")
+
+[node name="Merchant" parent="." instance=ExtResource("5_act")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 2)
+kind = "merchant"
+prompt = "Merchant (click / E)"
+
+[node name="Mesh" parent="Merchant"]
+mesh = SubResource("BoxMesh_block")
+surface_material_override/0 = SubResource("Mat_merchant")
+
+[node name="TownSign" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.5, 0)
+pixel_size = 0.02
+text = "Tristram-ish Hub"
+font_size = 64
+outline_size = 12
