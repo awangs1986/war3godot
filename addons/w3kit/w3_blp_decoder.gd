@@ -1,5 +1,7 @@
 extends RefCounted
 const W3BinaryReader = preload("res://addons/w3kit/w3_binary_reader.gd")
+const MAX_IMAGE_DIMENSION := 8192
+const MAX_IMAGE_PIXELS := 64 * 1024 * 1024
 ## BLP1 (palette / JPEG) and basic BLP2 decode → Godot Image.
 ## PNG sidecars are used when they keep transparency; otherwise decode BLP
 ## (many tree/leaf sidecars were baked as opaque RGB and look like cubes).
@@ -78,14 +80,14 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 		mip_offsets.append(r.read_u32())
 	for _i in 16:
 		mip_sizes.append(r.read_u32())
-	if width <= 0 or height <= 0 or mip_sizes[0] <= 0:
+	if not _valid_dimensions(width, height) or mip_sizes[0] <= 0:
 		return null
 	var off: int = mip_offsets[0]
 	var sz: int = mip_sizes[0]
 	if off + sz > data.size():
 		return null
 	if content == 0:
-		# Magos/HiveWE: jpeg header at byte 156, mip is JPEG body; often CMYK.
+		# Magos/HiveWE: jpeg header at byte 156, mip is JPEG body; War3 stores BGRA as fake CMYK.
 		var hdr_off := 156
 		if hdr_off + 4 > data.size():
 			return _checker(width, height)
@@ -97,17 +99,21 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 		var jpg := PackedByteArray()
 		jpg.append_array(header)
 		jpg.append_array(body)
+		# Prefer turbojpeg BGRA path — Godot load_jpg strips alpha → black mats on units/leaves.
+		var converted := _magick_cmyk_to_rgb(jpg)
+		if converted != null:
+			if converted.get_width() != int(width) or converted.get_height() != int(height):
+				converted.resize(width, height)
+			# Keep alpha even when alpha_bits==0: WC3 still uses the plane on model blend.
+			return converted
 		var img := Image.new()
 		if img.load_jpg_from_buffer(jpg) == OK:
 			if img.get_width() != int(width) or img.get_height() != int(height):
 				img.resize(width, height)
+			# RGB-only fallback: no real alpha; leave as-is (will look wrong on cutouts).
 			return img
-		# CMYK JPEGs fail in Godot — try ImageMagick sidecar conversion.
-		var converted := _magick_cmyk_to_rgb(jpg)
-		if converted != null:
-			return converted
 		return _checker(width, height)
-	# Palette
+	# Palette (direct)
 	var pal_pos := 156
 	if data.size() < pal_pos + 256 * 4 + width * height:
 		return _checker(width, height)
@@ -117,17 +123,55 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 		var b = data[pal_pos + i * 4]
 		var g = data[pal_pos + i * 4 + 1]
 		var r8 = data[pal_pos + i * 4 + 2]
-		var a = data[pal_pos + i * 4 + 3]
-		if alpha_bits == 0:
-			a = 255
-		colors[i] = Color(r8 / 255.0, g / 255.0, b / 255.0, a / 255.0)
-	var indices = data.slice(off, off + width * height)
+		# Palette A is unused for WC3 direct; real alpha is a separate mip plane.
+		colors[i] = Color(r8 / 255.0, g / 255.0, b / 255.0, 1.0)
+	var pix_n: int = width * height
+	if off + pix_n > data.size():
+		return _checker(width, height)
+	var indices = data.slice(off, off + pix_n)
 	var img2 := Image.create(width, height, false, Image.FORMAT_RGBA8)
 	for y in height:
 		for x in width:
 			var idx = indices[y * width + x]
 			img2.set_pixel(x, y, colors[idx])
+	# Alpha plane follows indices inside the same mip block (War3Net GetAlpha).
+	if alpha_bits > 0:
+		_apply_palette_alpha(img2, data, off + pix_n, int(alpha_bits), width, height)
 	return img2
+
+
+static func _apply_palette_alpha(img: Image, data: PackedByteArray, alpha_off: int, alpha_bits: int, width: int, height: int) -> void:
+	var n: int = width * height
+	if n <= 0 or img == null:
+		return
+	for i in n:
+		var a: float = 1.0
+		match alpha_bits:
+			1:
+				var bi: int = alpha_off + int(i / 8)
+				if bi >= data.size():
+					break
+				var bit: int = (data[bi] >> (i % 8)) & 1
+				a = 1.0 if bit != 0 else 0.0
+			4:
+				var ni: int = alpha_off + int(i / 2)
+				if ni >= data.size():
+					break
+				var b4: int = data[ni]
+				var nibble: int = (b4 & 0x0F) if (i % 2) == 0 else ((b4 >> 4) & 0x0F)
+				a = float(nibble) / 15.0
+			8:
+				var ai: int = alpha_off + i
+				if ai >= data.size():
+					break
+				a = float(data[ai]) / 255.0
+			_:
+				a = 1.0
+		var x: int = i % width
+		var y: int = int(i / width)
+		var c := img.get_pixel(x, y)
+		c.a = a
+		img.set_pixel(x, y, c)
 
 
 static func _magick_cmyk_to_rgb(jpg: PackedByteArray) -> Image:
@@ -198,3 +242,13 @@ static func _checker(w: int, h: int) -> Image:
 			var on = ((x >> 3) + (y >> 3)) % 2 == 0
 			img.set_pixel(x, y, Color(0.35, 0.55, 0.28) if on else Color(0.25, 0.4, 0.2))
 	return img
+
+
+static func _valid_dimensions(width: int, height: int) -> bool:
+	return (
+		width > 0
+		and height > 0
+		and width <= MAX_IMAGE_DIMENSION
+		and height <= MAX_IMAGE_DIMENSION
+		and width * height <= MAX_IMAGE_PIXELS
+	)

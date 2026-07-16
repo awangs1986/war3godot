@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BistroLitSettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/w3kit/bistro_lit_settings.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+scenario = 1
+manual_override = false
+sun_energy = 1.55
+sun_temperature_k = 4250.0
+sun_pitch_deg = -48.0
+sun_yaw_deg = 35.0
+sun_shadows = true
+exposure = 1.05
+saturation = 1.17
+glow_enabled = true
+glow_intensity = 0.85
+glow_strength = 0.7
+sdfgi_enabled = false
+ssil_enabled = false
+ssr_enabled = false
+ssao_intensity = 1.6
+fog_enabled = true
+fog_distance = 4800.0
+fog_intensity = 0.2

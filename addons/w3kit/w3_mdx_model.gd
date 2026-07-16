@@ -1,5 +1,8 @@
 extends RefCounted
 const W3BinaryReader = preload("res://addons/w3kit/w3_binary_reader.gd")
+const MAX_ELEMENTS := 2_000_000
+const MAX_TRACKS := 1_000_000
+const MAX_LAYERS := 4096
 ## Minimal MDX800 loader: geosets + sequences + bones + simple keyframe anim.
 
 
@@ -47,6 +50,7 @@ class Bone:
 class LayerInfo:
 	var texture_id: int = 0
 	var filter_mode: int = 0
+	var shading_flags: int = 0
 	var alpha: float = 1.0
 
 
@@ -260,6 +264,7 @@ static func _parse_geoa(model, chunk: PackedByteArray) -> void:
 				var ntracks: int = r.read_i32()
 				var interp: int = r.read_i32()
 				r.read_i32() # global seq
+				ntracks = _bounded_count(ntracks, r.remaining(), 8 + (8 if interp > 1 else 0), MAX_TRACKS)
 				for _i in ntracks:
 					if r.remaining() < 8:
 						break
@@ -274,6 +279,7 @@ static func _parse_geoa(model, chunk: PackedByteArray) -> void:
 				var n2: int = r.read_i32()
 				var interp2: int = r.read_i32()
 				r.read_i32()
+				n2 = _bounded_count(n2, r.remaining(), 16 + (24 if interp2 > 1 else 0), MAX_TRACKS)
 				for _j in n2:
 					if r.remaining() < 16:
 						break
@@ -309,6 +315,7 @@ static func _parse_mtls(model, chunk: PackedByteArray) -> void:
 			r.seek(start + inclusive)
 			continue
 		var layer_count = r.read_i32()
+		layer_count = _bounded_count(layer_count, r.remaining(), 4, MAX_LAYERS)
 		var layers: Array = []
 		for _i in layer_count:
 			if r.remaining() < 4:
@@ -317,7 +324,7 @@ static func _parse_mtls(model, chunk: PackedByteArray) -> void:
 			var layer_start = r.pos - 4
 			var li = LayerInfo.new()
 			li.filter_mode = r.read_i32()
-			r.read_i32() # shading flags
+			li.shading_flags = r.read_i32()
 			li.texture_id = r.read_i32()
 			r.read_i32() # texture anim id
 			r.read_i32() # coord id
@@ -374,6 +381,10 @@ static func _read_track_block(r, _tag: String) -> Dictionary:
 	var tracks = r.read_i32()
 	var interpolation = r.read_i32()
 	r.read_i32() # global seq
+	var value_bytes := 20 if _tag == "KGRT" else 16
+	if interpolation > 1:
+		value_bytes += 32 if _tag == "KGRT" else 24
+	tracks = _bounded_count(tracks, r.remaining(), value_bytes, MAX_TRACKS)
 	var times: PackedInt32Array = PackedInt32Array()
 	var values: Array = []
 	for _i in tracks:
@@ -424,41 +435,41 @@ static func _parse_geos(model, chunk: PackedByteArray) -> void:
 			var tag = r.read_fourcc()
 			match tag:
 				"VRTX":
-					var n = r.read_i32()
+					var n = _bounded_count(r.read_i32(), r.remaining(), 12, MAX_ELEMENTS)
 					for _i in n:
 						var vw := Vector3(r.read_f32(), r.read_f32(), r.read_f32())
 						g.vertices_war3.append(vw)
 						g.vertices.append(w3_to_godot(vw))
 				"NRMS":
-					var n2 = r.read_i32()
+					var n2 = _bounded_count(r.read_i32(), r.remaining(), 12, MAX_ELEMENTS)
 					for _i in n2:
 						var nw := Vector3(r.read_f32(), r.read_f32(), r.read_f32())
 						g.normals_war3.append(nw.normalized())
 						g.normals.append(w3_to_godot(nw).normalized())
 				"PTYP":
-					var cnt = r.read_i32()
+					var cnt = _bounded_count(r.read_i32(), r.remaining(), 4, MAX_ELEMENTS)
 					for _i in cnt:
 						r.read_i32()
 				"PCNT":
-					var cnt2 = r.read_i32()
+					var cnt2 = _bounded_count(r.read_i32(), r.remaining(), 4, MAX_ELEMENTS)
 					for _i in cnt2:
 						r.read_i32()
 				"PVTX":
-					var cnt3 = r.read_i32()
+					var cnt3 = _bounded_count(r.read_i32(), r.remaining(), 2, MAX_ELEMENTS * 3)
 					for _i in cnt3:
 						g.faces.append(r.read_u16())
 				"GNDX":
-					var cnt4 = r.read_i32()
+					var cnt4 = _bounded_count(r.read_i32(), r.remaining(), 1, MAX_ELEMENTS)
 					g.vertex_groups.resize(cnt4)
 					for i in cnt4:
 						g.vertex_groups[i] = r.read_u8()
 				"MTGC":
-					var cnt5 = r.read_i32()
+					var cnt5 = _bounded_count(r.read_i32(), r.remaining(), 4, MAX_ELEMENTS)
 					for _i in cnt5:
 						g.matrix_group_sizes.append(r.read_i32())
 				"MATS":
 					# mdx-m3-viewer Geoset.readMdx — matrix indices, then header, extents, UVAS.
-					var cnt6 = r.read_i32()
+					var cnt6 = _bounded_count(r.read_i32(), r.remaining(), 4, MAX_ELEMENTS * 4)
 					for _i in cnt6:
 						g.matrix_indices.append(r.read_i32())
 					g.material_id = r.read_i32()
@@ -484,7 +495,7 @@ static func _parse_geos(model, chunk: PackedByteArray) -> void:
 						if r.pos + 4 <= end:
 							var peek_tang := r.read_fourcc()
 							if peek_tang == "TANG":
-								var tn: int = r.read_i32()
+								var tn: int = _bounded_count(r.read_i32(), r.remaining(), 16, MAX_ELEMENTS)
 								for _i in tn * 4:
 									r.read_f32()
 							else:
@@ -497,7 +508,7 @@ static func _parse_geos(model, chunk: PackedByteArray) -> void:
 							else:
 								r.pos -= 4
 				"UVAS":
-					var n_uv_sets = r.read_i32()
+					var n_uv_sets = _bounded_count(r.read_i32(), r.remaining(), 8, 16)
 					for u_i in n_uv_sets:
 						if r.pos + 4 > end:
 							break
@@ -505,7 +516,7 @@ static func _parse_geos(model, chunk: PackedByteArray) -> void:
 						if uvs_tag != "UVBS":
 							r.pos -= 4
 							break
-						var n3 = r.read_i32()
+						var n3 = _bounded_count(r.read_i32(), r.remaining(), 8, MAX_ELEMENTS)
 						for _i in n3:
 							var u = r.read_f32()
 							var v = r.read_f32()
@@ -518,6 +529,15 @@ static func _parse_geos(model, chunk: PackedByteArray) -> void:
 		r.seek(end)
 		if g.vertices.size() > 0 and g.faces.size() > 0:
 			model.geosets.append(g)
+
+
+
+static func _bounded_count(raw: int, bytes_remaining: int, bytes_per_item: int, maximum: int) -> int:
+	if raw < 0 or raw > maximum or bytes_per_item <= 0:
+		return 0
+	if raw > bytes_remaining / bytes_per_item:
+		return 0
+	return raw
 
 
 func find_sequence(query: String) -> int:

@@ -21,8 +21,15 @@ uniform bool shd_enabled = true;
 uniform vec3 light_dir = vec3(0.45, 0.85, 0.28);
 uniform float light_ambient = 0.35;
 uniform float light_scale = 1.1;
+uniform vec3 light_color = vec3(1.0, 1.0, 1.0);
 /// Dye overlay alpha by corner bitset: BR=red BL=green TR=blue TL=yellow.
 uniform bool soft_tint = false;
+/// Mouse light-orb probe (sandbox L key).
+uniform bool probe_enabled = false;
+uniform vec3 probe_pos = vec3(0.0);
+uniform vec3 probe_color = vec3(1.0, 0.92, 0.72);
+uniform float probe_energy = 14.0;
+uniform float probe_range = 900.0;
 
 const float EMPTY = 60000.0; // sentinel above any real layer (max ~16*32)
 const float LAYER_STRIDE = 32.0;
@@ -136,7 +143,18 @@ void fragment() {
 		suv = clamp(suv, vec2(0.0), vec2(1.0));
 		shd = texture(shd_tex, suv).r;
 	}
-	ALBEDO = col.rgb * lighting * (1.0 - shd);
+	float lit = lighting * (1.0 - shd);
+	vec3 rgb = col.rgb * lit * light_color;
+	if (probe_enabled && probe_range > 1.0) {
+		vec3 to_p = probe_pos - v_world_pos;
+		float dist = length(to_p);
+		float atten = 1.0 - smoothstep(probe_range * 0.15, probe_range, dist);
+		atten *= atten;
+		vec3 ldir = dist > 0.001 ? to_p / dist : vec3(0.0, 1.0, 0.0);
+		float ndot = max(dot(normalize(v_normal), ldir), 0.0);
+		rgb += col.rgb * probe_color * probe_energy * 0.12 * atten * (0.4 + 0.6 * ndot);
+	}
+	ALBEDO = rgb;
 	if (soft_tint) {
 		float soft_a = 0.0;
 		vec3 soft_rgb = vec3(1.0, 0.0, 1.0);

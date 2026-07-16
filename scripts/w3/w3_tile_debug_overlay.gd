@@ -1,10 +1,13 @@
 extends Node3D
-## Temporary tile debug: grid lines + sparse labels + forced highlight + HUD hover.
-## Toggle with G from sandbox. Remove when blend QA is done.
+## Tile debug (G): green grid + near-camera tile coords.
+## When camera is within LABEL_NEAR of a tile center and the tile is in frustum, show "x,y".
+
 
 const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
 
-@export var label_step: int = 4
+## Show tile id labels only when camera is this close to the tile center (world units).
+const LABEL_NEAR := 650.0
+
 @export var grid_y_bias: float = 4.0
 @export var label_y_bias: float = 12.0
 
@@ -15,6 +18,9 @@ var _highlight_root: Node3D
 var _enabled: bool = false
 var _hover_tile: Vector2i = Vector2i(-1, -1)
 var _focus_tile: Vector2i = Vector2i(-1, -1)
+## Pool of Label3D reused while flying; key = "x,y"
+var _label_pool: Dictionary = {} # String -> Label3D
+var _active_keys: Dictionary = {} # String -> true (this frame)
 
 
 func setup(p_map) -> void:
@@ -23,7 +29,9 @@ func setup(p_map) -> void:
 	if _map == null:
 		return
 	_build_grid()
-	_build_labels()
+	_labels_root = Node3D.new()
+	_labels_root.name = "TileLabels"
+	add_child(_labels_root)
 	_highlight_root = Node3D.new()
 	_highlight_root.name = "FocusHighlight"
 	add_child(_highlight_root)
@@ -33,7 +41,9 @@ func setup(p_map) -> void:
 func set_debug_enabled(on: bool) -> void:
 	_enabled = on
 	visible = on
-	if on and _focus_tile.x >= 0:
+	if not on:
+		_hide_all_labels()
+	elif _focus_tile.x >= 0:
 		highlight_tile(_focus_tile)
 
 
@@ -74,7 +84,6 @@ func highlight_tile(tile: Vector2i) -> void:
 	var p11: Vector3 = _map.corner_world_pos(x + 1, y + 1)
 	var y_top: float = maxf(maxf(p00.y, p10.y), maxf(p01.y, p11.y)) + grid_y_bias + 2.0
 
-	# Raised red loop (double pass for thickness feel).
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_LINES)
 	var red := Color(1.0, 0.08, 0.08, 1.0)
@@ -84,7 +93,6 @@ func highlight_tile(tile: Vector2i) -> void:
 		Vector3(p11.x, y_top, p11.z), Vector3(p01.x, y_top, p01.z),
 		Vector3(p01.x, y_top, p01.z), Vector3(p00.x, y_top, p00.z),
 	]
-	# Inset second ring for visibility.
 	var mid: Vector3 = (p00 + p11) * 0.5
 	for i in range(0, ring.size(), 2):
 		var a: Vector3 = ring[i]
@@ -113,7 +121,6 @@ func highlight_tile(tile: Vector2i) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_highlight_root.add_child(mi)
 
-	# Big red coordinate in tile center.
 	var lab := Label3D.new()
 	lab.text = "%d,%d" % [x, y]
 	lab.font_size = 96
@@ -126,13 +133,11 @@ func highlight_tile(tile: Vector2i) -> void:
 	lab.position = Vector3(mid.x, y_top + label_y_bias + 8.0, mid.z)
 	_highlight_root.add_child(lab)
 
-	# Corner tags (fixed on ground plane corners — match HiveWE BL/BR/TL/TR).
 	_add_corner_tag("BL", Vector3(p00.x, y_top + 6.0, p00.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("BR", Vector3(p10.x, y_top + 6.0, p10.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("TL", Vector3(p01.x, y_top + 6.0, p01.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("TR", Vector3(p11.x, y_top + 6.0, p11.z), Color(1, 0.35, 0.35))
 
-	# Ensure overlay visible when focusing from goto.
 	visible = true
 	_enabled = true
 
@@ -157,6 +162,8 @@ func _clear() -> void:
 	_grid_mi = null
 	_labels_root = null
 	_highlight_root = null
+	_label_pool.clear()
+	_active_keys.clear()
 
 
 func _corner(x: int, y: int) -> Vector3:
@@ -201,36 +208,17 @@ func _build_grid() -> void:
 	add_child(_grid_mi)
 
 
-func _build_labels() -> void:
-	_labels_root = Node3D.new()
-	_labels_root.name = "TileLabels"
-	add_child(_labels_root)
-	var tiles_x: int = _map.tile_count_x()
-	var tiles_y: int = _map.tile_count_y()
-	var step: int = maxi(1, label_step)
-	for y in range(0, tiles_y, step):
-		for x in range(0, tiles_x, step):
-			var c00: Vector3 = _map.corner_world_pos(x, y)
-			var c11: Vector3 = _map.corner_world_pos(x + 1, y + 1)
-			var mid: Vector3 = (c00 + c11) * 0.5
-			mid.y = maxf(c00.y, c11.y) + label_y_bias
-			var lab := Label3D.new()
-			lab.text = "%d,%d" % [x, y]
-			lab.font_size = 48
-			lab.pixel_size = 0.45
-			lab.modulate = Color(1.0, 0.95, 0.2, 1.0)
-			lab.outline_modulate = Color(0, 0, 0, 1)
-			lab.outline_size = 8
-			lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			lab.no_depth_test = true
-			lab.position = mid
-			_labels_root.add_child(lab)
-
-
+## Called each frame while G-grid is on: hover tile + near/frustum labels.
 func update_hover(camera: Camera3D) -> void:
 	_hover_tile = Vector2i(-1, -1)
 	if camera == null or _map == null:
+		_hide_all_labels()
 		return
+	_update_hover_tile(camera)
+	_update_near_labels(camera)
+
+
+func _update_hover_tile(camera: Camera3D) -> void:
 	var from: Vector3 = camera.global_position
 	var to: Vector3 = from + (-camera.global_transform.basis.z) * 20000.0
 	var space := get_world_3d().direct_space_state
@@ -258,3 +246,76 @@ func update_hover(camera: Camera3D) -> void:
 	if tx < 0 or ty < 0 or tx >= _map.tile_count_x() or ty >= _map.tile_count_y():
 		return
 	_hover_tile = Vector2i(tx, ty)
+
+
+func _tile_center(tx: int, ty: int) -> Vector3:
+	var c00: Vector3 = _map.corner_world_pos(tx, ty)
+	var c11: Vector3 = _map.corner_world_pos(tx + 1, ty + 1)
+	var mid: Vector3 = (c00 + c11) * 0.5
+	mid.y = maxf(c00.y, c11.y) + label_y_bias
+	return mid
+
+
+func _update_near_labels(camera: Camera3D) -> void:
+	if _labels_root == null:
+		return
+	_active_keys.clear()
+	var cam_pos: Vector3 = camera.global_position
+	var tiles_x: int = _map.tile_count_x()
+	var tiles_y: int = _map.tile_count_y()
+	# Bound search to tiles that could be within LABEL_NEAR of the camera.
+	var near2: float = LABEL_NEAR * LABEL_NEAR
+	var min_tx := int(floor((cam_pos.x - LABEL_NEAR - _map.center_offset.x) / W3EMap.TILE_SIZE)) - 1
+	var max_tx := int(floor((cam_pos.x + LABEL_NEAR - _map.center_offset.x) / W3EMap.TILE_SIZE)) + 1
+	var min_ty := int(floor((cam_pos.z - LABEL_NEAR - _map.center_offset.y) / W3EMap.TILE_SIZE)) - 1
+	var max_ty := int(floor((cam_pos.z + LABEL_NEAR - _map.center_offset.y) / W3EMap.TILE_SIZE)) + 1
+	min_tx = clampi(min_tx, 0, tiles_x - 1)
+	max_tx = clampi(max_tx, 0, tiles_x - 1)
+	min_ty = clampi(min_ty, 0, tiles_y - 1)
+	max_ty = clampi(max_ty, 0, tiles_y - 1)
+
+	for ty in range(min_ty, max_ty + 1):
+		for tx in range(min_tx, max_tx + 1):
+			var mid: Vector3 = _tile_center(tx, ty)
+			if cam_pos.distance_squared_to(mid) > near2:
+				continue
+			if not camera.is_position_in_frustum(mid):
+				continue
+			var key := "%d,%d" % [tx, ty]
+			_active_keys[key] = true
+			var lab: Label3D = _label_pool.get(key) as Label3D
+			if lab == null or not is_instance_valid(lab):
+				lab = _make_tile_label(key)
+				_label_pool[key] = lab
+			lab.visible = true
+			lab.position = mid
+
+	# Hide labels that left range / frustum.
+	for key in _label_pool.keys():
+		if not _active_keys.has(key):
+			var lab2: Label3D = _label_pool[key] as Label3D
+			if lab2 != null and is_instance_valid(lab2):
+				lab2.visible = false
+
+
+func _make_tile_label(text: String) -> Label3D:
+	var lab := Label3D.new()
+	lab.text = text
+	lab.font_size = 48
+	lab.pixel_size = 0.45
+	lab.modulate = Color(1.0, 0.95, 0.2, 1.0)
+	lab.outline_modulate = Color(0, 0, 0, 1)
+	lab.outline_size = 8
+	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lab.no_depth_test = true
+	lab.visible = false
+	_labels_root.add_child(lab)
+	return lab
+
+
+func _hide_all_labels() -> void:
+	for key in _label_pool.keys():
+		var lab: Label3D = _label_pool[key] as Label3D
+		if lab != null and is_instance_valid(lab):
+			lab.visible = false
+	_active_keys.clear()

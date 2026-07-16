@@ -7,6 +7,8 @@ extends Node3D
 @export var ortho_size: float = 22.0
 ## Distance from pivot along the iso view vector.
 @export var distance: float = 32.0
+## When false, do not reclaim Camera3D.current (e.g. Blade Master Warsmash cam owns the view).
+@export var own_current: bool = true
 
 @onready var _camera: Camera3D = $Camera3D
 
@@ -23,6 +25,12 @@ func snap_to_target() -> void:
 	_configure_camera()
 
 
+func set_own_current(on: bool) -> void:
+	own_current = on
+	if not on and _camera:
+		_camera.current = false
+
+
 func _configure_camera() -> void:
 	# Classic D1 / WC3 style: yaw 45°, pitch ~35° (atan(1/sqrt(2))).
 	var yaw := deg_to_rad(45.0)
@@ -37,9 +45,11 @@ func _configure_camera() -> void:
 	_camera.basis = Basis.looking_at(-offset, Vector3.UP)
 	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	_camera.size = ortho_size
-	_camera.near = 0.05
-	_camera.far = 1000.0
-	_camera.make_current()
+	_camera.near = 0.05 if distance < 200.0 else 1.0
+	# War3 maps need a deep far plane when distance/ortho are large.
+	_camera.far = maxf(1000.0, distance * 8.0 + ortho_size * 2.0)
+	if own_current:
+		_camera.make_current()
 
 
 func _process(delta: float) -> void:
@@ -48,7 +58,7 @@ func _process(delta: float) -> void:
 			follow_target.global_position,
 			clampf(follow_speed * delta, 0.0, 1.0)
 		)
-	if _camera and not _camera.is_current():
+	if own_current and _camera and not _camera.is_current():
 		_camera.make_current()
 
 

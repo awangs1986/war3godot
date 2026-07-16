@@ -5,10 +5,16 @@ extends RefCounted
 
 const W3LitSettingsScript = preload("res://addons/w3kit/w3_lit_settings.gd")
 
+## When true (UE / Bistro), MDX uses PER_PIXEL and receives Directional/Omni.
+## When false (War3), MDX stays UNSHADED — BLP albedo is pre-lit.
+static var models_receive_lights: bool = false
+
 
 static func apply_to_scene(root: Node, settings = null) -> void:
 	if root == null:
 		return
+	# Drop UE-only Sky3D so War3 lit owns WorldEnvironment + DirectionalLight3D again.
+	preload("res://addons/w3kit/ue_style_lit.gd").teardown_ue_only_nodes(root)
 	var s = settings
 	if s == null or not (s is Resource) or s.get_script() == null:
 		s = load("res://addons/w3kit/w3_lit_settings_default.tres")
@@ -18,6 +24,8 @@ static func apply_to_scene(root: Node, settings = null) -> void:
 	_ensure_key_light(root, s)
 	_ensure_fill_light(root, s)
 	_sync_terrain_open_realm_light(root, s)
+	set_models_receive_lights(root, false)
+	_set_terrain_receive_lights(root, false)
 
 
 ## Push open-realm Lambert params into GPU terrain (custom unshaded shader).
@@ -40,7 +48,10 @@ static func _sync_terrain_open_realm_light(root: Node, s) -> void:
 	if s.get("ambient_intensity") != null:
 		# Map our 0..2 ambient knob onto open-realm floor (~0.25–0.45).
 		ambient = clampf(0.25 + float(s.get("ambient_intensity")) * 0.15, 0.2, 0.5)
-	terrain.apply_lighting(light_dir, ambient, 1.1)
+	var col := Color.WHITE
+	if sun != null:
+		col = sun.light_color
+	terrain.apply_lighting(light_dir, ambient, 1.1, col)
 
 
 static func style_terrain_material(mat: StandardMaterial3D) -> void:
@@ -55,10 +66,55 @@ static func style_terrain_material(mat: StandardMaterial3D) -> void:
 static func style_model_material(mat: StandardMaterial3D) -> void:
 	if mat == null:
 		return
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	mat.metallic = 0.0
-	mat.roughness = 0.88
-	mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	if models_receive_lights:
+		# UE / Bistro: take DirectionalLight + sky ambient (and mouse Omni probe).
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		mat.roughness = 0.82
+		mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	else:
+		# War3: BLP albedo is authored with baked shading — unshaded = WC3 look.
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.roughness = 1.0
+		mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+
+
+## One-shot restyle of unique model materials under W3MapWorld (safe on large maps).
+static func set_models_receive_lights(root: Node, on: bool) -> void:
+	models_receive_lights = on
+	if root == null:
+		return
+	var world := root.get_node_or_null("W3MapWorld")
+	if world == null:
+		return
+	var seen: Dictionary = {}
+	for gi in world.find_children("*", "GeometryInstance3D", true, false):
+		var geo := gi as GeometryInstance3D
+		if geo == null:
+			continue
+		var mat := geo.material_override as StandardMaterial3D
+		if mat == null or seen.has(mat):
+			continue
+		seen[mat] = true
+		# Keep additive glow/fire unshaded.
+		if mat.blend_mode == BaseMaterial3D.BLEND_MODE_ADD:
+			continue
+		style_model_material(mat)
+	if on:
+		print("W3War3Lit: models receive scene lights (unique mats=%d)" % seen.size())
+	else:
+		print("W3War3Lit: models unshaded / baked albedo (unique mats=%d)" % seen.size())
+
+
+static func _set_terrain_receive_lights(root: Node, on: bool) -> void:
+	if root == null:
+		return
+	var world := root.get_node_or_null("W3MapWorld")
+	if world == null:
+		return
+	var terrain = world.get("terrain")
+	if terrain != null and terrain.has_method("set_receive_scene_lights"):
+		terrain.set_receive_scene_lights(on)
 
 
 ## Modern water look — no War3 Water*.blp. Geometry still from W3E heights.

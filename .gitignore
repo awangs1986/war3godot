@@ -23,12 +23,14 @@ tools/mpqtool/node_modules/
 war3/local_paths.json
 !war3/README.md
 
-# Local tool dumps / Wine prefixes (never commit)
-tools/HiveWE/
-tools/wineprefixes/
-**/node_modules/
+# Local tool dumps (never commit). Wine/Proton prefixes are forbidden in this repo.
 tools/HiveWE/
 tools/wineprefixes/
 **/node_modules/
 **/__pycache__/
 *.pyc
+.tools/
+
+# Local Godot userdata / caches
+.local/
+.cursor/

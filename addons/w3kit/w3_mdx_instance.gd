@@ -13,6 +13,11 @@ var _seq_index: int = -1
 var _anim_time: float = 0.0 ## milliseconds within sequence
 var _playing: bool = true
 var _animate: bool = false ## skeletal deformation
+var _proximity_gate: bool = false ## only skin when batcher marks near camera
+var _anim_active: bool = true
+var _skin_frame: int = 0
+## When active near camera, rebuild mesh every N frames.
+const SKIN_EVERY_N_FRAMES := 2
 var _cliff_remap: bool = false ## Warsmash (y,-x,z) on bind verts
 ## Per-tile ground_height corners (g00,g10,g01,g11). HiveWE cliff.vert samples these per vertex.
 var _cliff_ground: Vector4 = Vector4.ZERO
@@ -24,7 +29,7 @@ var _placeholder: MeshInstance3D
 var _cache_key: String = ""
 var _geoset_nodes: Array = [] # MeshInstance3D
 var _bind_geosets: Array = [] # Geoset refs for skinning
-var _skinned_arrays: Array = [] # ArrayMesh per geoset (unique, not banked)
+var _skinned_arrays: Array = [] # bind-pose ArrayMesh per geoset (restore when far)
 
 
 static func clear_mesh_bank() -> void:
@@ -36,6 +41,7 @@ func setup(p_model, p_textures, cache_key: String = "", opts: Dictionary = {}) -
 	textures = p_textures
 	_cache_key = cache_key
 	_animate = bool(opts.get("animate", false)) and model != null and not model.bones.is_empty()
+	_proximity_gate = bool(opts.get("proximity_gate", false)) and _animate
 	_cliff_remap = bool(opts.get("cliff_remap", false))
 	_cliff_displace = opts.has("cliff_ground")
 	_cliff_ground = opts.get("cliff_ground", Vector4.ZERO) as Vector4
@@ -43,6 +49,8 @@ func setup(p_model, p_textures, cache_key: String = "", opts: Dictionary = {}) -
 	_geoset_nodes.clear()
 	_bind_geosets.clear()
 	_skinned_arrays.clear()
+	_anim_active = not _proximity_gate
+	_skin_frame = 0
 	for c in get_children():
 		c.queue_free()
 	_mesh_root = Node3D.new()
@@ -74,6 +82,38 @@ func setup(p_model, p_textures, cache_key: String = "", opts: Dictionary = {}) -
 				if not bank_key.is_empty():
 					_mesh_bank[bank_key] = bank
 	play_idle()
+	if _proximity_gate:
+		# Stay on bind pose until batcher wakes us near the camera.
+		set_anim_active(false)
+
+
+## Batcher proximity LOD: near camera → Stand skinning; far → bind pose + no process.
+func set_anim_active(on: bool) -> void:
+	if not _animate:
+		return
+	if on == _anim_active:
+		set_process(on)
+		return
+	_anim_active = on
+	set_process(on)
+	if on:
+		_skin_at_current_time()
+	else:
+		_restore_bind_pose()
+
+
+func is_anim_active() -> bool:
+	return _anim_active
+
+
+func _restore_bind_pose() -> void:
+	for mi in _geoset_nodes:
+		if mi == null or not is_instance_valid(mi):
+			continue
+		var gid := int(mi.get_meta("geoset_id", -1))
+		if gid >= 0 and gid < _skinned_arrays.size() and _skinned_arrays[gid] != null:
+			mi.mesh = _skinned_arrays[gid]
+	_apply_geoset_visibility()
 
 
 func _add_placeholder() -> void:
@@ -96,23 +136,47 @@ func _attach_bank(bank: Array) -> void:
 		mi.mesh = entry["mesh"]
 		mi.material_override = entry["mat"]
 		mi.set_meta("geoset_id", int(entry.get("geoset_id", -1)))
+		mi.set_meta("layer_index", int(entry.get("layer_index", 0)))
 		_mesh_root.add_child(mi)
 		_geoset_nodes.append(mi)
 
 
-func _make_material(g, team_color: int, cliff_tex_override: String) -> StandardMaterial3D:
+func _layers_for_geoset(g) -> Array:
+	if model == null or model.materials.is_empty():
+		return [null]
+	var mid = clampi(g.material_id, 0, model.materials.size() - 1)
+	var layers: Array = model.materials[mid]
+	if layers.is_empty():
+		return [null]
+	return layers
+
+
+func _make_material(g, team_color: int, cliff_tex_override: String, layer = null) -> StandardMaterial3D:
 	var W3War3Lit = preload("res://addons/w3kit/w3_war3_lit.gd")
 	var mat = StandardMaterial3D.new()
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	W3War3Lit.style_model_material(mat)
-	var tex_path = _texture_for_geoset(g, team_color, cliff_tex_override)
 	var layer_fm := 0
-	if not model.materials.is_empty():
-		var mid = clampi(g.material_id, 0, model.materials.size() - 1)
-		var layers: Array = model.materials[mid]
-		if not layers.is_empty():
-			layer_fm = int(layers[0].filter_mode)
+	var shading_flags := 0
+	var tex_path := ""
+	if layer != null:
+		layer_fm = int(layer.filter_mode)
+		shading_flags = int(layer.shading_flags)
+		if layer.texture_id >= 0 and layer.texture_id < model.textures.size():
+			tex_path = _resolve_texture_slot(layer.texture_id, team_color, cliff_tex_override)
+		mat.albedo_color.a = clampf(float(layer.alpha), 0.0, 1.0)
+	else:
+		tex_path = _texture_for_geoset(g, team_color, cliff_tex_override)
+		if not model.materials.is_empty():
+			var mid = clampi(g.material_id, 0, model.materials.size() - 1)
+			var layers: Array = model.materials[mid]
+			if not layers.is_empty():
+				layer_fm = int(layers[0].filter_mode)
+				shading_flags = int(layers[0].shading_flags)
+	# Magos shading: 0x1 unshaded, 0x10 two-sided (already cull disabled).
+	if (shading_flags & 0x1) != 0:
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var path_l := tex_path.to_lower()
 	var looks_cutout := (
 		path_l.contains("tree")
@@ -132,10 +196,11 @@ func _make_material(g, team_color: int, cliff_tex_override: String) -> StandardM
 	)
 	if not tex_path.is_empty() and textures != null:
 		mat.albedo_texture = textures.get_texture(tex_path)
+		var tex_has_alpha := _texture_has_alpha(mat.albedo_texture)
 		# WC3 filter modes: 0 opaque, 1 transparent(cutout), 2 blend, 3 additive, 4 addAlpha, 5/6 modulate.
-		if layer_fm == 1 or looks_cutout:
+		if layer_fm == 1 or looks_cutout or (layer_fm == 0 and tex_has_alpha):
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-			mat.alpha_scissor_threshold = 0.28
+			mat.alpha_scissor_threshold = 0.75 if layer_fm == 1 else 0.05
 		elif layer_fm == 2:
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		elif layer_fm == 3 or layer_fm == 4 or looks_add:
@@ -150,6 +215,15 @@ func _make_material(g, team_color: int, cliff_tex_override: String) -> StandardM
 	return mat
 
 
+func _texture_has_alpha(tex: Texture2D) -> bool:
+	if tex == null:
+		return false
+	var img: Image = tex.get_image()
+	if img == null:
+		return false
+	return preload("res://addons/w3kit/w3_blp_decoder.gd")._image_has_transparency(img)
+
+
 func _build_meshes(opts: Dictionary = {}) -> Array:
 	var bank: Array = []
 	var team_color: int = int(opts.get("team_color", 0))
@@ -157,30 +231,45 @@ func _build_meshes(opts: Dictionary = {}) -> Array:
 	for gi in model.geosets.size():
 		var g = model.geosets[gi]
 		var mesh := _commit_geoset_mesh(g, g.vertices, g.normals)
-		var mi = MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = _make_material(g, team_color, cliff_tex_override)
-		mi.set_meta("geoset_id", gi)
-		_mesh_root.add_child(mi)
-		_geoset_nodes.append(mi)
-		bank.append({"mesh": mesh, "mat": mi.material_override, "geoset_id": gi})
+		var layers: Array = _layers_for_geoset(g)
+		for li in layers.size():
+			var layer = layers[li]
+			var mat := _make_material(g, team_color, cliff_tex_override, layer)
+			# Later layers (blend/add) draw above base — Warsmash one-batch-per-layer order.
+			mat.render_priority = li
+			var mi = MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.material_override = mat
+			mi.set_meta("geoset_id", gi)
+			mi.set_meta("layer_index", li)
+			_mesh_root.add_child(mi)
+			_geoset_nodes.append(mi)
+			bank.append({"mesh": mesh, "mat": mat, "geoset_id": gi, "layer_index": li})
 	return bank
 
 
 func _build_animated_meshes(opts: Dictionary = {}) -> void:
 	var team_color: int = int(opts.get("team_color", 0))
 	var cliff_tex_override: String = str(opts.get("cliff_texture", ""))
+	_bind_geosets.clear()
+	_skinned_arrays.clear()
 	for gi in model.geosets.size():
 		var g = model.geosets[gi]
 		_bind_geosets.append(g)
 		var mesh := _commit_geoset_mesh(g, g.vertices, g.normals)
-		var mi = MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = _make_material(g, team_color, cliff_tex_override)
-		mi.set_meta("geoset_id", gi)
-		_mesh_root.add_child(mi)
-		_geoset_nodes.append(mi)
 		_skinned_arrays.append(mesh)
+		var layers: Array = _layers_for_geoset(g)
+		for li in layers.size():
+			var layer = layers[li]
+			var mat := _make_material(g, team_color, cliff_tex_override, layer)
+			mat.render_priority = li
+			var mi = MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.material_override = mat
+			mi.set_meta("geoset_id", gi)
+			mi.set_meta("layer_index", li)
+			_mesh_root.add_child(mi)
+			_geoset_nodes.append(mi)
 
 
 func _commit_geoset_mesh(g, verts: PackedVector3Array, norms: PackedVector3Array) -> ArrayMesh:
@@ -266,13 +355,13 @@ func play_idle() -> void:
 func _apply_sequence_index(idx: int) -> void:
 	if idx == _seq_index:
 		_apply_geoset_visibility()
-		if _animate:
+		if _animate and _anim_active:
 			_skin_at_current_time()
 		return
 	_seq_index = idx
 	_anim_time = 0.0
 	_apply_geoset_visibility()
-	if _animate:
+	if _animate and _anim_active:
 		_skin_at_current_time()
 
 
@@ -318,12 +407,8 @@ func _skin_at_current_time() -> void:
 		seq_start = int(s.interval_start)
 		seq_end = int(s.interval_end)
 	var worlds: Dictionary = W3MdxAnim.compute_world_matrices(model.bones, time_ms, seq_start, seq_end)
-	for gi in _geoset_nodes.size():
-		var mi: MeshInstance3D = _geoset_nodes[gi]
-		if mi == null or not is_instance_valid(mi):
-			continue
-		if gi >= _bind_geosets.size():
-			continue
+	# One skinned mesh per geoset; all material layers share that mesh.
+	for gi in _bind_geosets.size():
 		var g = _bind_geosets[gi]
 		var nvert: int = g.vertices_war3.size()
 		if nvert == 0:
@@ -339,15 +424,26 @@ func _skin_at_current_time() -> void:
 			var sn: Vector3 = W3MdxAnim.skin_normal(nw, g.bone_indices, g.bone_weights, vi, worlds)
 			skinned_v[vi] = W3MdxModel.w3_to_godot(sw)
 			skinned_n[vi] = W3MdxModel.w3_to_godot(sn).normalized()
-		mi.mesh = _commit_geoset_mesh(g, skinned_v, skinned_n)
+		var mesh := _commit_geoset_mesh(g, skinned_v, skinned_n)
+		if gi < _skinned_arrays.size():
+			_skinned_arrays[gi] = mesh
+		for mi in _geoset_nodes:
+			if mi == null or not is_instance_valid(mi):
+				continue
+			if int(mi.get_meta("geoset_id", -1)) == gi:
+				mi.mesh = mesh
 
 
 func _process(delta: float) -> void:
-	if not _playing or model == null or _seq_index < 0:
+	if not _playing or not _anim_active or model == null or _seq_index < 0:
 		return
 	var s = model.sequences[_seq_index]
 	var span = float(maxi(1, s.interval_end - s.interval_start))
 	_anim_time = fmod(_anim_time + delta * 1000.0, span)
 	_apply_geoset_visibility()
-	if _animate:
-		_skin_at_current_time()
+	if not _animate:
+		return
+	_skin_frame += 1
+	if (_skin_frame % SKIN_EVERY_N_FRAMES) != 0:
+		return
+	_skin_at_current_time()
