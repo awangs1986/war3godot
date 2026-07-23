@@ -1,5 +1,6 @@
 extends SceneTree
 ## godot --headless --path . -s res://tools/w3_smoke.gd
+## 0.1 acceptance smoke: W3E + height + A* + optional Footman MDX.
 
 
 func _init() -> void:
@@ -11,6 +12,10 @@ func _init() -> void:
 	var W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
 	var W3GridPathfinder = preload("res://addons/w3kit/w3_grid_pathfinder.gd")
 	var W3MapArchive = preload("res://addons/w3kit/w3_map_archive.gd")
+	var W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
+	var W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+	var W3Wpm = preload("res://addons/w3kit/w3_wpm.gd")
+	var W3WarsmashPathfinder = preload("res://addons/w3kit/w3_warsmash_pathfinder.gd")
 
 	print("=== W3 0.1 smoke ===")
 	var path := ProjectSettings.globalize_path("res://testdata/hivewe_sample/war3map.w3e")
@@ -26,6 +31,10 @@ func _init() -> void:
 	var mid := Vector2i(map.tile_count_x() / 2, map.tile_count_y() / 2)
 	var c: Vector3 = samp.tile_center_world(mid)
 	print("mid tile center=", c)
+	if not samp.is_tile_walkable(mid):
+		push_error("mid tile not walkable")
+		quit(1)
+		return
 	var pf = W3GridPathfinder.new(samp)
 	var path_tiles = pf.find_path(mid, mid + Vector2i(3, 2))
 	print("path len=", path_tiles.size())

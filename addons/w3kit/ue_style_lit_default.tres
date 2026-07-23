@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="UeStyleLitSettings" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/w3kit/ue_style_lit_settings.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+sky_backend = 1
+sky3d_hour = 10.5
+sky3d_time_progress = false
+sun_intensity = 1.35
+sun_temperature_k = 6500.0
+sun_pitch_deg = -52.0
+sun_yaw_deg = 35.0
+sun_shadows = true
+sun_angular_distance = 0.53
+sky_energy = 1.35
+sky_turbidity = 4.0
+ambient_from_sky = 1.15
+exposure = 1.05
+glow_enabled = true
+glow_intensity = 0.4
+sdfgi_enabled = false
+ssil_enabled = false
+fog_enabled = true
+fog_distance = 4200.0
+fog_intensity = 0.22

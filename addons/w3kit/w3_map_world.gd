@@ -23,6 +23,7 @@ const WarsmashCliffRenderer = preload("res://addons/w3kit_cs/Terrain/WarsmashCli
 
 
 signal load_finished(ok: bool, message: String)
+signal load_progress(ratio: float, message: String)
 
 @export var terrain_only: bool = false
 ## Preview: skip directional shadows (HiveWE editor doesn't pay game shadow cost).
@@ -74,6 +75,27 @@ func _ready() -> void:
 
 
 func load_path(path: String) -> bool:
+	## Sync entry for tools/smoke. Starts MDX stream but does not wait for it.
+	return _load_path_sync(path)
+
+
+func _emit_progress(ratio: float, message: String) -> void:
+	load_progress.emit(clampf(ratio, 0.0, 1.0), message)
+
+
+func _is_level_resource_path(path: String) -> bool:
+	var ext := path.get_extension().to_lower()
+	return ext == "res" or ext == "tres"
+
+
+func _resolve_resource_path(path: String) -> String:
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return path
+	return ProjectSettings.localize_path(path)
+
+
+## Runtime path for data produced by W3LevelImporter. No W3E parsing occurs here.
+func load_level_data(level: Resource) -> bool:
 	_clear_visuals()
 	_reset_loaded_state()
 	W3Paths.clear_resolve_cache()
@@ -101,6 +123,9 @@ func load_path(path: String) -> bool:
 	textures.set_map_dir(archive.map_dir)
 	textures.load_terrain_slk()
 	catalog.load_from_roots(archive)
+
+	_emit_progress(0.15, "Parsing W3E…")
+	await get_tree().process_frame
 	var w3e_bytes = archive.read_file("war3map.w3e")
 	if w3e_bytes.is_empty():
 		map = W3EMap.load_file(archive.map_dir.path_join("war3map.w3e"))
@@ -112,7 +137,6 @@ func load_path(path: String) -> bool:
 	pathfinder = W3GridPathfinder.new(sampler)
 	_load_pathing_grid(archive.read_file("war3map.wpm"), archive.map_dir)
 
-	# 1–2: terrain + water instanced (fast path). Cliffs still shared MDX instances.
 	var shd_bytes: PackedByteArray = archive.read_file("war3map.shd")
 	if shd_bytes.is_empty():
 		var shd_path: String = archive.map_dir.path_join("war3map.shd")
@@ -120,6 +144,84 @@ func load_path(path: String) -> bool:
 			var f := FileAccess.open(shd_path, FileAccess.READ)
 			if f:
 				shd_bytes = f.get_buffer(f.get_length())
+
+	_emit_progress(0.25, "Building ground…")
+	await get_tree().process_frame
+	terrain.build(map, textures, shd_bytes)
+
+	_emit_progress(0.45, "Building cliffs…")
+	await get_tree().process_frame
+	cliffs.build(map, textures)
+
+	_emit_progress(0.55, "Building water…")
+	await get_tree().process_frame
+	water.build(map, textures)
+
+	if preview_no_shadows:
+		_disable_scene_shadows()
+
+	if not terrain_only:
+		_emit_progress(0.60, "Queueing doodads / units…")
+		await get_tree().process_frame
+		batcher.setup(textures, catalog, archive, sampler)
+		_queue_doodads()
+		_queue_units()
+		batcher.begin_streaming()
+		while not batcher.is_streaming_complete():
+			var sp: float = batcher.get_stream_progress()
+			_emit_progress(0.62 + sp * 0.36, "Loading models…")
+			await get_tree().process_frame
+	else:
+		print("W3MapWorld: terrain_only — skipped doodads/units")
+
+	_refresh_status()
+	print(_status)
+	_emit_progress(1.0, "Ready")
+	load_finished.emit(true, _status)
+	return true
+
+
+func _load_path_sync(path: String) -> bool:
+	_clear_visuals()
+	_reset_loaded_state()
+	W3Paths.clear_resolve_cache()
+	_load_path_label = path
+
+	if _is_level_resource_path(path):
+		var resource_path := _resolve_resource_path(path)
+		var level := ResourceLoader.load(resource_path)
+		return load_level_data(level)
+
+	archive = W3MapArchive.new()
+	if path.is_empty():
+		return _fallback_or_fail("empty path")
+	if not archive.open(path):
+		_status = "W3X/map open failed: %s (%s)" % [path, archive.extract_error]
+		return _fallback_or_fail(_status)
+
+	textures.set_map_dir(archive.map_dir)
+	textures.load_terrain_slk()
+	catalog.load_from_roots(archive)
+
+	var w3e_bytes = archive.read_file("war3map.w3e")
+	if w3e_bytes.is_empty():
+		map = W3EMap.load_file(archive.map_dir.path_join("war3map.w3e"))
+	else:
+		map = W3EMap.load_bytes(w3e_bytes)
+	if map == null:
+		return _fallback_or_fail("failed to parse war3map.w3e: %s" % W3EMap.last_error)
+	sampler = W3HeightSampler.new(map)
+	pathfinder = W3WarsmashPathfinder.load_for_map(sampler, archive)
+	print("W3MapWorld: pathfinder=", pathfinder.source_label if pathfinder else "null")
+
+	var shd_bytes: PackedByteArray = archive.read_file("war3map.shd")
+	if shd_bytes.is_empty():
+		var shd_path: String = archive.map_dir.path_join("war3map.shd")
+		if FileAccess.file_exists(shd_path):
+			var f := FileAccess.open(shd_path, FileAccess.READ)
+			if f:
+				shd_bytes = f.get_buffer(f.get_length())
+
 	terrain.build(map, textures, shd_bytes)
 	if cliffs.has_method("set_path_resolver"):
 		# C# cliff renderer resolves MDX/textures through the archive (map dir
@@ -131,13 +233,13 @@ func load_path(path: String) -> bool:
 	if preview_no_shadows:
 		_disable_scene_shadows()
 
-	# 3–4: queue doodads into MultiMesh batcher (streamed + frustum).
 	if not terrain_only:
 		batcher.setup(textures, catalog, archive, sampler)
 		_queue_doodads()
+		_queue_units()
 		batcher.begin_streaming()
 	else:
-		print("W3MapWorld: terrain_only — skipped doodads")
+		print("W3MapWorld: terrain_only — skipped doodads/units")
 
 	_refresh_status()
 	print(_status)
@@ -288,6 +390,7 @@ func _load_procedural(msg: String, tiles_x: int = 24, tiles_y: int = 24) -> bool
 	terrain.build(map, textures, PackedByteArray())
 	_status = msg
 	print("W3MapWorld: ", _status)
+	_emit_progress(1.0, msg)
 	load_finished.emit(true, _status)
 	return true
 
@@ -366,6 +469,8 @@ func _refresh_status() -> void:
 		map.tile_count_x() if map else 0,
 		map.tile_count_y() if map else 0,
 		str(bcounts.get("ok", 0)),
+		str(bcounts.get("anim_active", 0)),
+		str(bcounts.get("animated", 0)),
 		str(bcounts.get("miss", 0)),
 		str(bcounts.get("batches", 0)),
 		str(cliff_stats.get("ok", 0)),

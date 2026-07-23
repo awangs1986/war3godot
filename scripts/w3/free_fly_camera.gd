@@ -28,34 +28,35 @@ func _ready() -> void:
 	projection = PROJECTION_PERSPECTIVE
 	fov = 55.0
 	near = 1.0
-	far = 20000.0
+	far = 11000.0
 	current = true
 	_apply_rot()
 
 
 func focus_point(center: Vector3, extent: float = 2000.0) -> void:
-	global_position = center + Vector3(extent * 0.45, extent * 0.55, extent * 0.45)
-	look_at(center, Vector3.UP)
-	var e := global_transform.basis.get_euler()
-	_yaw = e.y
-	_pitch = e.x
-	_apply_rot()
+	_topdown_active = false
 	projection = PROJECTION_PERSPECTIVE
+	fov = 55.0
+	near = 1.0
+	far = 11000.0
+	global_position = center + Vector3(extent * 0.45, extent * 0.55, extent * 0.45)
+	_aim_at(center)
 
 
 ## Top-down ortho over a tile: screen-up = map +Y (north), screen-right = map +X (east).
 ## Manual basis — look_at(center, +Z) mirrors X (east↔west), so TL would land top-right.
 func focus_tile_topdown(center: Vector3, ortho_size: float = 380.0) -> void:
+	_topdown_active = true
+	_topdown_center = center
 	projection = PROJECTION_ORTHOGONAL
 	size = ortho_size
 	near = 1.0
 	far = 20000.0
 	global_position = center + Vector3(0.0, 2500.0, 0.0)
 	# Camera axes: +X east, +Y north (+Z world), -Z look down (−Y world).
+	# Do NOT sync _yaw/_pitch from this basis — nadir euler is gimbal-locked and
+	# poisons the next perspective switch (white sky / broken view on RMB rotate).
 	global_transform.basis = Basis(Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(0, 1, 0))
-	var e := global_transform.basis.get_euler()
-	_yaw = e.y
-	_pitch = e.x
 
 
 func release_look() -> void:
@@ -133,10 +134,34 @@ func _process(delta: float) -> void:
 
 
 func _ensure_perspective() -> void:
-	if projection == PROJECTION_ORTHOGONAL:
-		projection = PROJECTION_PERSPECTIVE
-		fov = 55.0
+	if projection != PROJECTION_ORTHOGONAL and not _topdown_active:
+		return
+	projection = PROJECTION_PERSPECTIVE
+	fov = 55.0
+	near = 1.0
+	far = 11000.0
+	if _topdown_active:
+		_topdown_active = false
+		# Stable freefly exit: angled view aimed at the goto tile.
+		# Do not use look_at+get_euler — discarding roll inverts the view ("ground in sky").
+		var extent := 900.0
+		global_position = _topdown_center + Vector3(extent * 0.45, extent * 0.65, extent * 0.45)
+		_aim_at(_topdown_center)
+	else:
 		_apply_rot()
+
+
+## Sync freefly yaw/pitch to look at target. Matches rotation = (pitch, yaw, 0).
+func _aim_at(target: Vector3) -> void:
+	var dir: Vector3 = target - global_position
+	if dir.length_squared() < 0.0001:
+		_apply_rot()
+		return
+	dir = dir.normalized()
+	# Identity forward is -Z; negative pitch looks down (default _pitch=-0.55).
+	_yaw = atan2(-dir.x, -dir.z)
+	_pitch = clampf(asin(clampf(dir.y, -1.0, 1.0)), min_pitch, max_pitch)
+	_apply_rot()
 
 
 func _apply_rot() -> void:

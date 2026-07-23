@@ -82,7 +82,6 @@ func highlight_tile(tile: Vector2i) -> void:
 	var p11: Vector3 = _map.corner_world_pos(x + 1, y + 1)
 	var y_top: float = maxf(maxf(p00.y, p10.y), maxf(p01.y, p11.y)) + grid_y_bias + 2.0
 
-	# Raised red loop (double pass for thickness feel).
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_LINES)
 	var red := Color(1.0, 0.08, 0.08, 1.0)
@@ -92,7 +91,6 @@ func highlight_tile(tile: Vector2i) -> void:
 		Vector3(p11.x, y_top, p11.z), Vector3(p01.x, y_top, p01.z),
 		Vector3(p01.x, y_top, p01.z), Vector3(p00.x, y_top, p00.z),
 	]
-	# Inset second ring for visibility.
 	var mid: Vector3 = (p00 + p11) * 0.5
 	for i in range(0, ring.size(), 2):
 		var a: Vector3 = ring[i]
@@ -121,7 +119,6 @@ func highlight_tile(tile: Vector2i) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_highlight_root.add_child(mi)
 
-	# Big red coordinate in tile center.
 	var lab := Label3D.new()
 	lab.text = "%d,%d" % [x, y]
 	lab.font_size = 96
@@ -134,13 +131,11 @@ func highlight_tile(tile: Vector2i) -> void:
 	lab.position = Vector3(mid.x, y_top + label_y_bias + 8.0, mid.z)
 	_highlight_root.add_child(lab)
 
-	# Corner tags (fixed on ground plane corners — match HiveWE BL/BR/TL/TR).
 	_add_corner_tag("BL", Vector3(p00.x, y_top + 6.0, p00.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("BR", Vector3(p10.x, y_top + 6.0, p10.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("TL", Vector3(p01.x, y_top + 6.0, p01.z), Color(1, 0.35, 0.35))
 	_add_corner_tag("TR", Vector3(p11.x, y_top + 6.0, p11.z), Color(1, 0.35, 0.35))
 
-	# Ensure overlay visible when focusing from goto.
 	visible = true
 	_enabled = true
 

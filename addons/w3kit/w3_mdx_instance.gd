@@ -408,10 +408,11 @@ func _make_layer_material(layer, tex_path: String, layer_fm: int) -> StandardMat
 	)
 	if not tex_path.is_empty() and textures != null:
 		mat.albedo_texture = textures.get_texture(tex_path)
+		var tex_has_alpha := _texture_has_alpha(mat.albedo_texture)
 		# WC3 filter modes: 0 opaque, 1 transparent(cutout), 2 blend, 3 additive, 4 addAlpha, 5/6 modulate.
-		if layer_fm == 1 or looks_cutout:
+		if layer_fm == 1 or looks_cutout or (layer_fm == 0 and tex_has_alpha):
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-			mat.alpha_scissor_threshold = 0.28
+			mat.alpha_scissor_threshold = 0.75 if layer_fm == 1 else 0.05
 		elif layer_fm == 2:
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		elif layer_fm == 3 or layer_fm == 4 or looks_add:
@@ -424,6 +425,15 @@ func _make_layer_material(layer, tex_path: String, layer_fm: int) -> StandardMat
 	else:
 		mat.albedo_color = Color(0.45, 0.55, 0.35)
 	return mat
+
+
+func _texture_has_alpha(tex: Texture2D) -> bool:
+	if tex == null:
+		return false
+	var img: Image = tex.get_image()
+	if img == null:
+		return false
+	return preload("res://addons/w3kit/w3_blp_decoder.gd")._image_has_transparency(img)
 
 
 func _build_meshes(opts: Dictionary = {}) -> Array:
@@ -470,6 +480,18 @@ func _build_animated_meshes(opts: Dictionary = {}) -> void:
 		mi.skeleton = mi.get_path_to(_skeleton)
 		_geoset_nodes.append(mi)
 		_skinned_arrays.append(mesh)
+		var layers: Array = _layers_for_geoset(g)
+		for li in layers.size():
+			var layer = layers[li]
+			var mat := _make_material(g, team_color, cliff_tex_override, layer)
+			mat.render_priority = li
+			var mi = MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.material_override = mat
+			mi.set_meta("geoset_id", gi)
+			mi.set_meta("layer_index", li)
+			_mesh_root.add_child(mi)
+			_geoset_nodes.append(mi)
 
 
 func _build_gpu_skeleton() -> void:

@@ -221,7 +221,7 @@ static func parse_units(data: PackedByteArray, game_version_major: int = 0, game
 			r.read_i32() # level
 		if not abil_ok:
 			break
-		# random blob (HiveWE switch on random_type)
+		# random blob (HiveWE switch on random_type — unknown types read nothing)
 		if r.remaining() < 4:
 			break
 		var random_type = r.read_i32()
