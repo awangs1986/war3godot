@@ -1,0 +1,1 @@
+yaw=3.6383 pitch=0.7770 dist=19511.4 target=9739.7,-4244.4 grid=True press=3 move=662 glrect=589,231,869,789 win=159,46

@@ -284,7 +284,9 @@ func _tile_texture_layers(x: int, y: int) -> Array:
 
 
 func _corner_tex(x: int, y: int) -> int:
-	## Warsmash realTileTexture (simplified): blight uses appended blight atlas.
+	## Legacy mesh path (boot preload only). Production ground packing is
+	## GroundLayout / w3_gpu_terrain (HiveWE real_tile_texture). Keep blight +
+	## authored ground here so this unused path stays compile-safe.
 	var c = map.get_corner(x, y)
 	if c == null:
 		return 0

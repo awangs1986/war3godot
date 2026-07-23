@@ -1,0 +1,69 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://addons/w3_foundation/terrain/rendering/TerrainWorld.cs" id="1_world"]
+[ext_resource type="Script" path="res://addons/w3_foundation/terrain/data/TerrainDocument.cs" id="2_document"]
+[ext_resource type="Script" path="res://addons/w3_foundation/preview/TerrainPreviewCamera.cs" id="3_camera"]
+[ext_resource type="Script" path="res://addons/w3_foundation/preview/PreviewVisibilityBudget.cs" id="4_budget"]
+[ext_resource type="Script" path="res://addons/w3_foundation/preview/TerrainPreviewController.cs" id="5_controller"]
+
+[sub_resource type="Resource" id="Resource_terrain"]
+resource_local_to_scene = true
+script = ExtResource("2_document")
+TileWidth = 32
+TileHeight = 32
+TileSize = 128.0
+CliffStep = 128.0
+
+[sub_resource type="Environment" id="Environment_lab"]
+background_mode = 1
+background_color = Color(0.12, 0.16, 0.21, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.62, 0.7, 0.82, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+
+[sub_resource type="StandardMaterial3D" id="Material_floor_marker"]
+albedo_color = Color(0.8, 0.65, 0.2, 1)
+shading_mode = 0
+
+[sub_resource type="SphereMesh" id="Sphere_center"]
+material = SubResource("Material_floor_marker")
+radius = 24.0
+height = 48.0
+
+[node name="TerrainLab" type="Node3D"]
+
+[node name="TerrainWorld" type="Node3D" parent="."]
+script = ExtResource("1_world")
+Document = SubResource("Resource_terrain")
+ChunkSize = 16
+ShowTileGrid = true
+
+[node name="CenterMarker" type="MeshInstance3D" parent="."]
+position = Vector3(2048, 28, 2048)
+mesh = SubResource("Sphere_center")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-52, -35, 0)
+shadow_enabled = true
+directional_shadow_max_distance = 9000.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_lab")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+position = Vector3(2048, 2600, 4750)
+rotation_degrees = Vector3(-38, 0, 0)
+current = true
+far = 20000.0
+script = ExtResource("3_camera")
+
+[node name="PreviewVisibilityBudget" type="Node" parent="."]
+script = ExtResource("4_budget")
+CameraPath = NodePath("../Camera3D")
+
+[node name="TerrainPreviewController" type="Node" parent="."]
+script = ExtResource("5_controller")
+TerrainPath = NodePath("../TerrainWorld")
+CameraPath = NodePath("../Camera3D")
+VisibilityBudgetPath = NodePath("../PreviewVisibilityBudget")

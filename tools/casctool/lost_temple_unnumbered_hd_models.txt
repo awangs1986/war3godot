@@ -1,0 +1,7 @@
+Units/Creeps/ForestTrollBerserker/ForestTrollBerserker.mdx
+Units/Creeps/ForestTrollHighPriest/ForestTrollHighPriest.mdx
+Units/Creeps/GnollAssassin/GnollAssassin.mdx
+Units/Creeps/GnollBrute/GnollBrute.mdx
+Units/Creeps/GraniteGolem/GraniteGolem.mdx
+Units/Creeps/OgreMauler/OgreMauler.mdx
+Units/Creeps/RedDrake/RedDrake.mdx

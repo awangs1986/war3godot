@@ -52,6 +52,60 @@ static func sample_quat(
 	return fv[fv.size() - 1] as Quaternion
 
 
+static func sample_float(
+	times: PackedInt32Array,
+	values: PackedFloat32Array,
+	time_ms: int,
+	default_v: float,
+	seq_start: int = -1,
+	seq_end: int = -1
+) -> float:
+	var ft := PackedInt32Array()
+	var fv := PackedFloat32Array()
+	for i in mini(times.size(), values.size()):
+		var t: int = times[i]
+		if seq_start >= 0 and seq_end >= 0 and (t < seq_start or t > seq_end):
+			continue
+		ft.append(t)
+		fv.append(values[i])
+	if ft.is_empty():
+		return default_v
+	if ft.size() == 1 or time_ms <= ft[0]:
+		return fv[0]
+	if time_ms >= ft[ft.size() - 1]:
+		return fv[fv.size() - 1]
+	for i in range(ft.size() - 1):
+		if time_ms >= ft[i] and time_ms <= ft[i + 1]:
+			var span := maxi(1, ft[i + 1] - ft[i])
+			return lerpf(fv[i], fv[i + 1], float(time_ms - ft[i]) / float(span))
+	return fv[fv.size() - 1]
+
+
+## KMTF texture IDs are discrete flipbook frames; Warsmash samples the latest
+## key at or before model time and never interpolates between texture indices.
+static func sample_int_step(
+	times: PackedInt32Array,
+	values: PackedInt32Array,
+	time_ms: int,
+	default_v: int,
+	seq_start: int = -1,
+	seq_end: int = -1
+) -> int:
+	var chosen := default_v
+	var found := false
+	for i in mini(times.size(), values.size()):
+		var t := int(times[i])
+		if seq_start >= 0 and seq_end >= 0 and (t < seq_start or t > seq_end):
+			continue
+		if not found:
+			chosen = int(values[i])
+			found = true
+		if t > time_ms:
+			break
+		chosen = int(values[i])
+	return chosen
+
+
 static func _filter_vec3(
 	times: PackedInt32Array,
 	values: PackedVector3Array,

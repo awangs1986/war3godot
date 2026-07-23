@@ -19,9 +19,10 @@ class Placement:
 	var creation_number: int = 0
 
 
-static func parse_doodads(data: PackedByteArray) -> Array:
+static func parse_doodads(data: PackedByteArray, game_version_major: int = 0, game_version_minor: int = 0) -> Array:
 	## Mirrors HiveWE Doodads::load (classic maps: version 7/8).
 	var out: Array = []
+	var has_skin_ids := game_version_major * 100 + game_version_minor >= 132
 	if data.size() < 12:
 		return out
 	var r = W3BinaryReader.new(data)
@@ -35,7 +36,7 @@ static func parse_doodads(data: PackedByteArray) -> Array:
 	count = clampi(count, 0, 100000)
 	for _i in count:
 		# id(4)+var(4)+pos(12)+angle(4)+scale(12)+flags(1)+life(1)+editor(4) ≈ 42 min
-		if r.remaining() < 42:
+		if r.remaining() < (46 if has_skin_ids else 42):
 			break
 		var p = Placement.new()
 		p.id = r.read_fourcc()
@@ -50,7 +51,7 @@ static func parse_doodads(data: PackedByteArray) -> Array:
 		var sy = r.read_f32()
 		var sz = r.read_f32()
 		p.scale = Vector3(sx, sz, sy)
-		p.skin_id = p.id
+		p.skin_id = r.read_fourcc() if has_skin_ids else p.id
 		p.flags = r.read_u8() # state
 		p.life = r.read_u8()
 		if version >= 8:
@@ -83,7 +84,7 @@ static func parse_doodads(data: PackedByteArray) -> Array:
 	if not special.is_empty():
 		print("W3DooParser: special/terrain doodads=", special.size())
 		out.append_array(special)
-	print("W3DooParser: doodads=", out.size(), "/", count, " ver=", version)
+	print("W3DooParser: doodads=", out.size(), "/", count, " ver=", version, " skins=", has_skin_ids)
 	return out
 
 
@@ -113,10 +114,11 @@ static func _parse_special_doodads(r) -> Array:
 	return out
 
 
-static func parse_units(data: PackedByteArray) -> Array:
+static func parse_units(data: PackedByteArray, game_version_major: int = 0, game_version_minor: int = 0) -> Array:
 	## Mirrors HiveWE Units::load — critical: two unknown bytes after player;
 	## item_table_pointer / hero stats gated on subversion >= 11.
 	var out: Array = []
+	var has_skin_ids := game_version_major * 100 + game_version_minor >= 132
 	if data.size() < 12:
 		return out
 	var r = W3BinaryReader.new(data)
@@ -129,7 +131,7 @@ static func parse_units(data: PackedByteArray) -> Array:
 	var count = r.read_i32()
 	count = clampi(count, 0, 100000)
 	for _i in count:
-		if r.remaining() < 50:
+		if r.remaining() < (54 if has_skin_ids else 50):
 			break
 		var p = Placement.new()
 		p.id = r.read_fourcc()
@@ -145,7 +147,7 @@ static func parse_units(data: PackedByteArray) -> Array:
 		var sz = r.read_f32()
 		p.scale = Vector3(sx, sz, sy)
 		# skin_id only for game >= 1.32 — classic maps omit it (HiveWE MapInfo check).
-		p.skin_id = p.id
+		p.skin_id = r.read_fourcc() if has_skin_ids else p.id
 		p.flags = r.read_u8()
 		p.player_owner = r.read_i32()
 		# HiveWE: unknown1 + unknown2 (TWO bytes) — was the main parse desync.
@@ -240,14 +242,13 @@ static func parse_units(data: PackedByteArray) -> Array:
 					break
 				r.read_bytes(nrand * 8)
 			_:
-				# Unknown — stop this unit rather than desync whole file
-				push_warning("W3DooParser: unknown random_type %d at unit %s" % [random_type, p.id])
-				break
+				# HiveWE: values such as -1 have no trailing random-data payload.
+				pass
 		if r.remaining() < 12:
 			break
 		r.read_i32() # custom_color
 		r.read_i32() # waygate
 		p.creation_number = r.read_i32()
 		out.append(p)
-	print("W3DooParser: units=", out.size(), "/", count, " ver=", version, " sub=", subversion)
+	print("W3DooParser: units=", out.size(), "/", count, " ver=", version, " sub=", subversion, " skins=", has_skin_ids)
 	return out

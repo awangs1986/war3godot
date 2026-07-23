@@ -7,11 +7,21 @@ extends Camera3D
 @export var min_pitch: float = -1.4
 @export var max_pitch: float = 1.4
 
+# Warcraft III's default angle of attack is about 56 degrees downward.
+const DEFAULT_W3_PITCH := deg_to_rad(-56.0)
+const WHEEL_ZOOM_FACTOR := 1.12
+const WHEEL_ZOOM_SPEED_MULTIPLIER := 2.0
+
 var _yaw: float = 0.0
-var _pitch: float = -0.55
+var _pitch: float = DEFAULT_W3_PITCH
 var _looking: bool = false
+var _look_anchor := Vector2.ZERO
 ## When true, freeze WASD / look (sandbox console open).
 var input_blocked: bool = false
+## Embedded child-window mode (external editor graft): MOUSE_MODE_CAPTURED
+## needs window activation that WS_CHILD windows never receive, so RMB look
+## silently breaks. Emulate capture: hide cursor + warp back to the anchor.
+var emulate_capture: bool = false
 
 
 func _ready() -> void:
@@ -60,28 +70,42 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_RIGHT:
 			_looking = event.pressed
 			if _looking:
-				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+				if emulate_capture:
+					_look_anchor = get_viewport().get_mouse_position()
+					Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+				else:
+					Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			else:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom(-1.0)
-		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_zoom(1.0)
+		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_zoom(-1.0)
 	elif event is InputEventMouseMotion and _looking:
+		var delta: Vector2 = event.relative
+		if emulate_capture:
+			# Warp generates a synthetic motion event back to the anchor whose
+			# relative would counter-rotate; measure against the anchor instead.
+			delta = event.position - _look_anchor
+			if delta == Vector2.ZERO:
+				return
+			get_viewport().warp_mouse(_look_anchor)
 		_ensure_perspective()
-		_yaw -= event.relative.x * look_sensitivity
-		_pitch -= event.relative.y * look_sensitivity
+		_yaw -= delta.x * look_sensitivity
+		_pitch -= delta.y * look_sensitivity
 		_pitch = clampf(_pitch, min_pitch, max_pitch)
 		_apply_rot()
 
 
-## Wheel zoom: ortho → size; perspective → dolly along view axis.
+## Positive zoom moves toward the view target. Keep wheel behavior identical
+## for orthographic and perspective camera modes.
 func _zoom(sign: float) -> void:
 	if projection == PROJECTION_ORTHOGONAL:
-		size = clampf(size * (1.12 if sign > 0.0 else 1.0 / 1.12), 80.0, 4000.0)
+		var wheel_factor := pow(WHEEL_ZOOM_FACTOR, WHEEL_ZOOM_SPEED_MULTIPLIER)
+		size = clampf(size * (1.0 / wheel_factor if sign > 0.0 else wheel_factor), 80.0, 4000.0)
 	else:
 		var dir: Vector3 = -global_transform.basis.z
-		global_position += dir * sign * move_speed * 0.08
+		global_position += dir * sign * move_speed * 0.08 * WHEEL_ZOOM_SPEED_MULTIPLIER
 
 
 func _process(delta: float) -> void:

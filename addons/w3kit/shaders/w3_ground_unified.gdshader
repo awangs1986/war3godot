@@ -1,15 +1,23 @@
 shader_type spatial;
 // HiveWE/Warsmash true-source ground: single pass, Texture2DArray, per-tile uvec4.
 // Each tile carries up to 4 array layers (base + 3 overlays), composited high→base.
-render_mode unshaded, cull_disabled, specular_disabled;
+render_mode cull_disabled, depth_draw_opaque, diffuse_burley, specular_schlick_ggx;
 
 // Per-tile data: RGBAF, each channel = global array layer (tileset*STRIDE + sublayer),
 // or EMPTY sentinel. R = base (lowest priority), A = highest. filter_nearest + texelFetch.
 uniform sampler2D tile_data : filter_nearest;
 uniform sampler2D height_tex : hint_default_black, filter_nearest;
+// Lighting-only heights: raw corner ground_height without cliff layers or ramp
+// lift (HiveWE terrain.vert reads ground_heights for normals, clif_levels for
+// positions). Falls back to height_tex when the renderer doesn't provide it.
+uniform sampler2D height_normal_tex : hint_default_black, filter_nearest;
+uniform bool height_normal_enabled = false;
 uniform sampler2D exists_tex : hint_default_white, filter_nearest;
 // One 64x64 layer per ground sub-image; layer = tileset_index*STRIDE + sub (0..15 blend, 16..31 deco).
-uniform sampler2DArray ground_array : source_color, filter_linear, repeat_disable;
+// HiveWE GroundTexture: GL_LINEAR_MIPMAP_LINEAR with a full mip chain.
+uniform sampler2DArray ground_array0 : source_color, filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray ground_array1 : source_color, filter_linear_mipmap, repeat_disable;
+uniform sampler2DArray ground_array2 : source_color, filter_linear_mipmap, repeat_disable;
 uniform sampler2D shd_tex : hint_default_black, filter_linear, repeat_disable;
 
 uniform ivec2 map_tiles = ivec2(64, 64);
@@ -23,9 +31,12 @@ uniform float light_ambient = 0.35;
 uniform float light_scale = 1.1;
 /// Dye overlay alpha by corner bitset: BR=red BL=green TR=blue TL=yellow.
 uniform bool soft_tint = false;
+uniform bool debug_tile_coords = false;
+uniform bool flat_lighting = false;
 
 const float EMPTY = 60000.0; // sentinel above any real layer (max ~16*32)
 const float LAYER_STRIDE = 32.0;
+const float ARRAY_BANK_SIZE = 256.0;
 
 varying vec2 v_local;
 varying flat ivec2 v_tile;
@@ -38,6 +49,17 @@ float sample_height(ivec2 corner) {
 	return textureLod(height_tex, uv, 0.0).r;
 }
 
+// HiveWE terrain.vert: normals come from ground_heights (corner_height only,
+// no cliff layers) so cliff steps never shade the surrounding ground tiles.
+float sample_nheight(ivec2 corner) {
+	corner = clamp(corner, ivec2(0), map_corners - ivec2(1));
+	vec2 uv = (vec2(corner) + vec2(0.5)) / vec2(map_corners);
+	if (height_normal_enabled) {
+		return textureLod(height_normal_tex, uv, 0.0).r;
+	}
+	return textureLod(height_tex, uv, 0.0).r;
+}
+
 // Sample one sub-image layer; EMPTY → fully transparent (contributes nothing).
 // DotA soft-tint QA (H): BR tiles showed at TL, BL↔TR, TR↔BL, TL↔BR → 180° off
 // under uv=(1-x,y). Rotate: (x, 1-y) matches Warsmash vertex UV in Godot.
@@ -46,7 +68,13 @@ vec4 sample_layer(float layer_f, vec2 local) {
 		return vec4(0.0);
 	}
 	vec2 uv = vec2(local.x, 1.0 - local.y);
-	return texture(ground_array, vec3(uv, layer_f));
+	if (layer_f < ARRAY_BANK_SIZE) {
+		return texture(ground_array0, vec3(uv, layer_f));
+	}
+	if (layer_f < ARRAY_BANK_SIZE * 2.0) {
+		return texture(ground_array1, vec3(uv, layer_f - ARRAY_BANK_SIZE));
+	}
+	return texture(ground_array2, vec3(uv, layer_f - ARRAY_BANK_SIZE * 2.0));
 }
 
 float ground_lighting(vec3 n, vec3 ldir) {
@@ -105,10 +133,10 @@ void vertex() {
 	}
 
 	ivec2 cc = v_tile + ivec2(int(local.x + 0.5), int(local.y + 0.5));
-	float hL = sample_height(cc + ivec2(-1, 0));
-	float hR = sample_height(cc + ivec2(1, 0));
-	float hD = sample_height(cc + ivec2(0, -1));
-	float hU = sample_height(cc + ivec2(0, 1));
+	float hL = sample_nheight(cc + ivec2(-1, 0));
+	float hR = sample_nheight(cc + ivec2(1, 0));
+	float hD = sample_nheight(cc + ivec2(0, -1));
+	float hU = sample_nheight(cc + ivec2(0, 1));
 	vec3 n = normalize(vec3(hL - hR, 2.0 * tile_size, hD - hU));
 	NORMAL = n;
 	v_normal = n;
@@ -117,26 +145,28 @@ void vertex() {
 
 void fragment() {
 	float exists = texelFetch(exists_tex, v_tile, 0).r;
-	if (exists < 0.5) {
+	if (exists < 0.5 && !debug_tile_coords) {
 		discard;
 	}
 	// Per-tile 4 layers: R=base(opaque), then G,B,A stacked above.
 	vec4 ti = texelFetch(tile_data, v_tile, 0);
-	// Composite high→base: color = mix(lower, color, color.a).
+	// HiveWE terrain.frag: start at the TOPMOST overlay and under-composite
+	// down to the base (order matters for 3+ layer tiles).
 	vec4 col = sample_layer(ti.a, v_local);
 	col = mix(sample_layer(ti.b, v_local), col, col.a);
 	col = mix(sample_layer(ti.g, v_local), col, col.a);
-	col = mix(sample_layer(ti.r, v_local), col, col.a); // base: a==1 → fully replaces
+	col = mix(sample_layer(ti.r, v_local), col, col.a);
 
-	float lighting = ground_lighting(normalize(v_normal), light_dir);
 	float shd = 0.0;
-	if (shd_enabled && map_size.x > 0.0 && map_size.y > 0.0) {
+	if (!flat_lighting && shd_enabled && map_size.x > 0.0 && map_size.y > 0.0) {
 		vec2 suv = (v_world_pos.xz - map_origin) / map_size;
-		suv.y = 1.0 - suv.y;
+		// W3Shd uploads rows into a Godot ImageTexture in map-Y order already.
+		// Flipping here mirrors baked shadows across the map (for example row
+		// 45 incorrectly darkened row 114 on Lost Temple).
 		suv = clamp(suv, vec2(0.0), vec2(1.0));
 		shd = texture(shd_tex, suv).r;
 	}
-	ALBEDO = col.rgb * lighting * (1.0 - shd);
+	vec3 base_color = col.rgb;
 	if (soft_tint) {
 		float soft_a = 0.0;
 		vec3 soft_rgb = vec3(1.0, 0.0, 1.0);
@@ -145,7 +175,26 @@ void fragment() {
 		accum_soft(ti.a, v_local, soft_a, soft_rgb);
 		// Punchy: any soft alpha paints solid bitset color (ignore weak attenuation).
 		if (soft_a > 0.04) {
-			ALBEDO = mix(ALBEDO, soft_rgb, clamp(soft_a * 1.6, 0.55, 1.0));
+			base_color = mix(base_color, soft_rgb, clamp(soft_a * 1.6, 0.55, 1.0));
 		}
+	}
+	if (debug_tile_coords) {
+		base_color = vec3(float(v_tile.x) / float(map_tiles.x - 1), float(v_tile.y) / float(map_tiles.y - 1), exists);
+	}
+	if (flat_lighting) {
+		ALBEDO = vec3(0.0);
+		EMISSION = base_color;
+		AO = 1.0;
+	} else {
+		ALBEDO = base_color;
+		ROUGHNESS = 0.94;
+		METALLIC = 0.0;
+		SPECULAR = 0.18;
+		// Warcraft's authored SHD becomes an AO term. Direct sun, sky ambient,
+		// SSAO and SDFGI are evaluated by Godot instead of fake Lambert shading.
+		// Keep authored SHD as broad ambient occlusion while cascaded shadows
+		// provide the directional darkness. This avoids double-black terrain.
+		AO = clamp(1.0 - shd * 0.80, 0.50, 1.0);
+		AO_LIGHT_AFFECT = 0.20;
 	}
 }

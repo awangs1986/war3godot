@@ -4,13 +4,24 @@
 
 [resource]
 script = ExtResource("1")
-sun_intensity = 0.95
-sun_temperature_k = 5600.0
-sun_pitch_deg = -48.0
+sun_intensity = 1.25
+sun_temperature_k = 5000.0
+sun_pitch_deg = -42.0
 sun_yaw_deg = 38.0
-sun_shadows = false
-ambient_intensity = 0.35
-fill_intensity = 0.18
+sun_shadows = true
+modern_pipeline_enabled = true
+ssao_enabled = true
+ssil_enabled = true
+dynamic_gi_enabled = true
+glow_enabled = true
+volumetric_fog_enabled = true
+tonemap_exposure = 2.05
+agx_contrast = 1.08
+saturation = 1.0
+ssao_intensity = 1.25
+glow_intensity = 0.1
+ambient_intensity = 0.72
+fill_intensity = 0.42
 fog_enabled = true
 fog_distance = 3800.0
 fog_intensity = 0.38

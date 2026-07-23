@@ -1,0 +1,28 @@
+name: Godot 4.7 CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.7.1
+        shell: bash
+        run: |
+          curl -fL -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          mv Godot_v4.7.1-stable_linux.x86_64 godot
+          chmod +x godot
+          ./godot --version
+      - name: Import project
+        run: ./godot --headless --path . --editor --quit
+      - name: Core regression
+        run: ./godot --headless --path . --script res://tools/w3_regression.gd
+      - name: W3 smoke
+        run: ./godot --headless --path . --script res://tools/w3_smoke.gd
+      - name: Imported level runtime smoke
+        run: ./godot --headless --path . --script res://tools/w3_level_runtime_smoke.gd

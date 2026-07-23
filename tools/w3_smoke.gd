@@ -29,9 +29,17 @@ func _init() -> void:
 	var pf = W3GridPathfinder.new(samp)
 	var path_tiles = pf.find_path(mid, mid + Vector2i(3, 2))
 	print("path len=", path_tiles.size())
+	if path_tiles.is_empty():
+		push_error("pathfinding failed")
+		quit(1)
+		return
 	var arch = W3MapArchive.new()
 	var sample := ProjectSettings.globalize_path("res://testdata/hivewe_sample")
 	var ok: bool = arch.open(sample)
 	print("archive open=", ok, " dir=", arch.map_dir, " err=", arch.extract_error)
+	if not ok:
+		push_error("archive open failed: %s" % arch.extract_error)
+		quit(1)
+		return
 	print("SMOKE_OK")
 	quit(0)

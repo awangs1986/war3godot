@@ -9,6 +9,7 @@ tools/refs/
 user_w3_assets/
 war3/game/
 war3/maps/
+war3/reforged/
 tools/mpqtool/node_modules/
 *.w3x
 *.w3m
@@ -27,8 +28,35 @@ war3/local_paths.json
 tools/HiveWE/
 tools/wineprefixes/
 **/node_modules/
-tools/HiveWE/
-tools/wineprefixes/
-**/node_modules/
 **/__pycache__/
 *.pyc
+.tools/
+
+# Build / IDE / agent scratch
+**/bin/
+**/obj/
+.vs/
+.idea/
+.cursor/
+.codex-artifacts/
+.superpowers/
+.speech-transcription-venv/
+NuGet/
+output/
+outputs/
+*.user
+*.suo
+*.DotSettings.user
+
+# Built binaries (source stays tracked)
+*.dll
+*.exe
+*.pdb
+!tools/mpqtool/turbojpeg.dll
+
+# Godot C# / NuGet local caches
+.mono/
+packages/
+
+# Reforged sample textures (Blizzard assets)
+testdata/reforged/
