@@ -1106,16 +1106,12 @@ public partial class MainWindow
         RefreshSelectionVisual();
 
         // Save → reparse roundtrip (byte-fidelity for untouched records).
-        string dooPath = System.IO.Path.Combine(_session.SourcePath, "war3map.doo");
-        byte[] original = File.ReadAllBytes(dooPath);
-        _session.Save();
-        var reparsed = W3DooFile.ParseDoodadsDocument(File.ReadAllBytes(dooPath), _session.DoodadsDoc.HasSkinIds);
+        byte[] serializedDoodads = _session.DoodadsDoc.Write();
+        var reparsed = W3DooFile.ParseDoodadsDocument(
+            serializedDoodads, _session.DoodadsDoc.HasSkinIds);
         log.Add(reparsed.Placements.Count == _session.Doodads.Count
             ? $"OK: doo save/parse roundtrip ({reparsed.Placements.Count} records)"
             : $"FAIL: roundtrip {reparsed.Placements.Count} != {_session.Doodads.Count}");
-        // Restore the original file so the self test leaves no trace.
-        File.WriteAllBytes(dooPath, original);
-
         DisarmPlacement();
         SetMode(EditMode.Terrain);
         return log;

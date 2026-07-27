@@ -44,6 +44,18 @@ public interface IMapDocument
     /// 4.2 / 4.3: per-file atomicity is not enough for a 3-file map).
     /// </summary>
     void Save();
+
+}
+
+/// <summary>
+/// Optional migration capability for hosts that can merge caller-owned live
+/// models into the document's single atomic commit. Kept separate from
+/// <see cref="IMapDocument"/> so existing third-party document implementations
+/// remain source and binary compatible.
+/// </summary>
+public interface IAuthoritativeMapDocument : IMapDocument
+{
+    void Save(IReadOnlyDictionary<string, byte[]> authoritativeFiles);
 }
 
 /// <summary>One independent data section of a map, owned by exactly one module.</summary>

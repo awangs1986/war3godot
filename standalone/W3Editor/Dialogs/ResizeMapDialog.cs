@@ -9,8 +9,8 @@ public sealed class ResizeMapDialog : Window
     private readonly NumericUpDown _width;
     private readonly NumericUpDown _height;
     public bool Confirmed { get; private set; }
-    public int WidthTiles => (int)(_width.Value ?? W3EMap.MinTiles);
-    public int HeightTiles => (int)(_height.Value ?? W3EMap.MinTiles);
+    public int WidthTiles => NormalizeSize(_width.Value);
+    public int HeightTiles => NormalizeSize(_height.Value);
 
     public ResizeMapDialog(int widthTiles, int heightTiles)
     {
@@ -27,7 +27,13 @@ public sealed class ResizeMapDialog : Window
         root.Children.Add(Ui.FieldLabel("从四边对称扩展/裁剪；HiveWE/WE 范围 32–480，步长 4。操作后清空撤销历史。"));
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8, Margin = new Avalonia.Thickness(0, 12, 0, 0) };
         var apply = Ui.PrimaryButton("调整");
-        apply.Click += (_, _) => { Confirmed = true; Close(); };
+        apply.Click += (_, _) =>
+        {
+            _width.Value = WidthTiles;
+            _height.Value = HeightTiles;
+            Confirmed = true;
+            Close();
+        };
         var cancel = Ui.SecondaryButton("取消");
         cancel.Click += (_, _) => Close();
         buttons.Children.Add(apply);
@@ -44,6 +50,15 @@ public sealed class ResizeMapDialog : Window
         Value = value,
         FormatString = "0",
     };
+
+    internal static int NormalizeSize(decimal? value)
+    {
+        int raw = (int)Math.Round(value ?? W3EMap.MinTiles, MidpointRounding.AwayFromZero);
+        int rounded = (int)Math.Round(
+            raw / (double)W3EMap.TileStep,
+            MidpointRounding.AwayFromZero) * W3EMap.TileStep;
+        return Math.Clamp(rounded, W3EMap.MinTiles, W3EMap.MaxTiles);
+    }
 
     private static void AddField(StackPanel root, string label, Control field)
     {

@@ -771,11 +771,7 @@ public partial class MainWindow : Window
         if (!_session.IsOpen) return;
         try
         {
-            // Module-owned files (objects/imports/...) go first. The legacy
-            // session then writes its live terrain/placement state last, so a
-            // module snapshot can never overwrite a brush stroke made after open.
-            _moduleHost.Document?.Save();
-            _session.Save();
+            SaveCurrentDocument();
             StatusLeft.Text = _session.IsNativeFormat
                 ? $"已保存 d1map：{_session.SourcePath}"
                 : _session.IsFolder
@@ -969,7 +965,7 @@ public partial class MainWindow : Window
             if (_session.IsNativeFormat)
             {
                 if (_session.IsDirty)
-                    _session.Save();
+                    SaveCurrentDocument();
                 previewPath = _session.SourcePath;
             }
             else
@@ -1078,6 +1074,7 @@ public partial class MainWindow : Window
             _session.Resize(dialog.WidthTiles, dialog.HeightTiles);
             _history.Clear();
             _selection.Clear();
+            OpenModuleDocumentFromSession();
             RefreshFromSession();
             GlView.Scene.NotifyMapReplaced();
             StatusLeft.Text = $"已按 HiveWE 四边规则调整为 {dialog.WidthTiles}×{dialog.HeightTiles}（未保存，撤销历史已清空）";
@@ -1298,7 +1295,7 @@ public partial class MainWindow : Window
             if (paint && _session.Map != null)
             {
                 RunNewMapPaint();
-                _session.Save();
+                SaveCurrentDocument();
             }
         }
         catch (Exception ex)
@@ -1782,8 +1779,15 @@ public partial class MainWindow : Window
             Services.MapFormatKind.D1MapFolder => W3Editor.Contracts.MapFormatKind.D1MapFolder,
             _ => W3Editor.Contracts.MapFormatKind.None,
         };
-        _moduleHost.OpenDocument(folder, format);
+        _moduleHost.OpenDocument(folder, format, _session.CaptureSavePayloads());
         RefreshModuleCommandStates();
+    }
+
+    private void SaveCurrentDocument()
+    {
+        if (_moduleHost.Document == null)
+            throw new InvalidOperationException("Module document is not open.");
+        _session.Save(_moduleHost.Document);
     }
 
     private bool HasModuleCommand(string id) =>

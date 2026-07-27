@@ -234,6 +234,67 @@ public sealed class MapSession
     }
 
     /// <summary>
+    /// GUI/module save path. Session-owned live models replace duplicate
+    /// module snapshots, but the document performs the only disk commit.
+    /// </summary>
+    public void Save(W3Editor.Contracts.IMapDocument document)
+    {
+        if (Map == null)
+            throw new InvalidOperationException("No map is open.");
+        ArgumentNullException.ThrowIfNull(document);
+        string expectedFolder = IsNativeFormat || IsFolder
+            ? Path.GetFullPath(SourcePath)
+            : Path.GetDirectoryName(Path.GetFullPath(W3ePath))!;
+        if (!string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(document.Folder)),
+                Path.TrimEndingDirectorySeparator(expectedFolder),
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Module document and MapSession refer to different map folders.");
+
+        if (document is not W3Editor.Contracts.IAuthoritativeMapDocument atomicDocument)
+            throw new NotSupportedException(
+                "The active document host cannot merge live session payloads atomically.");
+        atomicDocument.Save(CaptureSavePayloads());
+        if (IsNativeFormat)
+            _nativeTemplate = CaptureNative(
+                _nativeTemplate?.Name ?? Path.GetFileName(SourcePath));
+        _pathingDirty = false;
+        _regionsDirty = false;
+        _mapIdentityDirty = false;
+        IsDirty = false;
+    }
+
+    /// <summary>Serializes all current session-owned map files without disk I/O.</summary>
+    public IReadOnlyDictionary<string, byte[]> CaptureSavePayloads()
+    {
+        if (Map == null)
+            throw new InvalidOperationException("No map is open.");
+        var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        if (IsNativeFormat)
+        {
+            NativeMap native = CaptureNative(
+                _nativeTemplate?.Name ?? Path.GetFileName(SourcePath));
+            foreach ((string name, byte[] data) in NativeMapFormat.SerializeFiles(native))
+                files[name] = data;
+            return files;
+        }
+
+        files[IsFolder ? "war3map.w3e" : Path.GetFileName(W3ePath)] = Map.SaveBytes();
+        if (!IsFolder)
+            return files;
+        files["war3map.doo"] = DoodadsDoc.Write();
+        files["war3mapUnits.doo"] = UnitsDoc.Write();
+        if (Pathing != null)
+            files["war3map.wpm"] = Pathing.SaveBytes();
+        if (Regions != null)
+            files["war3map.w3r"] = Regions.SaveBytes();
+        if (MapIdentity != null)
+            files["war3map.w3i"] = MapIdentity.Write();
+        return files;
+    }
+
+    /// <summary>
     /// Writes a d1map snapshot without changing the current session format or
     /// source path. Used by conversion and engine preview boundaries.
     /// </summary>

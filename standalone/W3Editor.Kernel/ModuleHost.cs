@@ -254,12 +254,15 @@ public sealed class ModuleHost : IDisposable
     // Document lifecycle
     // -----------------------------------------------------------------
 
-    public MapDocument OpenDocument(string folder, MapFormatKind format)
+    public MapDocument OpenDocument(
+        string folder,
+        MapFormatKind format,
+        IReadOnlyDictionary<string, byte[]>? authoritativeFiles = null)
     {
         folder = Path.GetFullPath(folder);
         AtomicFileSet.SweepStaleTemps(folder);
         var document = new MapDocument(folder, format, Log, History);
-        document.Load(Registry.Codecs);
+        document.Load(Registry.Codecs, authoritativeFiles);
         History.Clear();
         _document = document;
         DocumentChanged?.Invoke(document);

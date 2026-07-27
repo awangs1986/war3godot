@@ -48,15 +48,19 @@ public static class NativeMapFormat
         // Serialize every component before touching the current generation.
         // A malformed placement, overflow, etc. therefore cannot create a
         // mixed map.json/terrain.bin/placements.bin generation.
-        var files = new (string Name, byte[] Data)[]
+        IReadOnlyList<(string Name, byte[] Data)> files = SerializeFiles(map);
+        Directory.CreateDirectory(dir);
+        WriteTransactionally(dir, files);
+    }
+
+    /// <summary>Serializes a complete native map without touching disk.</summary>
+    public static IReadOnlyList<(string Name, byte[] Data)> SerializeFiles(NativeMap map) =>
+        new (string Name, byte[] Data)[]
         {
             (ManifestFile, WriteManifest(map)),
             (TerrainFile, WriteTerrain(map)),
             (PlacementsFile, WritePlacements(map)),
         };
-        Directory.CreateDirectory(dir);
-        WriteTransactionally(dir, files);
-    }
 
     private static void WriteTransactionally(
         string dir,

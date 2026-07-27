@@ -8,7 +8,7 @@ namespace W3Editor.Kernel;
 /// and re-emitted byte-for-byte, which is what makes removing a module safe
 /// for data.
 /// </summary>
-public sealed class MapDocument : IMapDocument
+public sealed class MapDocument : IAuthoritativeMapDocument
 {
     private readonly List<IDocumentPart> _parts = new();
     private readonly List<UnknownPart> _unknown = new();
@@ -62,8 +62,11 @@ public sealed class MapDocument : IMapDocument
     /// Runs every codec that handles this format, then sweeps the folder for
     /// unclaimed files. Codec order is the codec's declared Order.
     /// </summary>
-    internal void Load(IReadOnlyList<IPartCodec> codecs)
+    internal void Load(
+        IReadOnlyList<IPartCodec> codecs,
+        IReadOnlyDictionary<string, byte[]>? authoritativeFiles = null)
     {
+        Dictionary<string, byte[]> overlays = NormalizePayloads(authoritativeFiles);
         var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (IPartCodec codec in codecs.Where(c => c.CanHandle(Format)).OrderBy(c => c.Order))
@@ -71,7 +74,7 @@ public sealed class MapDocument : IMapDocument
             foreach (string name in codec.FileNames)
                 claimed.Add(AtomicFileSet.NormalizeRelativeFileName(name));
 
-            var ctx = new PartReadContext(this, _log);
+            var ctx = new PartReadContext(this, _log, overlays);
             try
             {
                 IDocumentPart? part = codec.Read(ctx);
@@ -102,8 +105,19 @@ public sealed class MapDocument : IMapDocument
                 string name = Path.GetRelativePath(Folder, path).Replace('\\', '/');
                 if (claimed.Contains(name) || AtomicFileSet.IsKernelFile(name))
                     continue;
-                _unknown.Add(new UnknownPart(name, File.ReadAllBytes(path)));
+                _unknown.Add(new UnknownPart(
+                    name,
+                    overlays.TryGetValue(name, out byte[]? live) ? live : File.ReadAllBytes(path)));
             }
+        }
+
+        foreach ((string name, byte[] bytes) in overlays)
+        {
+            if (claimed.Contains(name) || AtomicFileSet.IsKernelFile(name)
+                || _unknown.Any(part => string.Equals(
+                    part.FileName, name, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            _unknown.Add(new UnknownPart(name, bytes));
         }
 
         AtomicFileSet.VerifyResult verify = AtomicFileSet.Verify(Folder);
@@ -119,7 +133,12 @@ public sealed class MapDocument : IMapDocument
     // Save
     // -----------------------------------------------------------------
 
-    public void Save()
+    public void Save() => SaveCore(authoritativeFiles: null);
+
+    public void Save(IReadOnlyDictionary<string, byte[]> authoritativeFiles) =>
+        SaveCore(authoritativeFiles);
+
+    private void SaveCore(IReadOnlyDictionary<string, byte[]>? authoritativeFiles)
     {
         var payloads = new List<AtomicFileSet.FilePayload>();
         var writeCtx = new PartWriteContext(this, _log, payloads);
@@ -144,14 +163,43 @@ public sealed class MapDocument : IMapDocument
             payloads.Add(new AtomicFileSet.FilePayload(unknown.FileName, unknown.Bytes));
         }
 
+        // The legacy GUI models remain authoritative during the modular C#
+        // migration. Replace duplicate part snapshots before Commit so there
+        // is exactly one on-disk generation and no post-commit overwrite.
+        foreach ((string name, byte[] bytes) in NormalizePayloads(authoritativeFiles))
+        {
+            payloads.RemoveAll(payload => string.Equals(
+                payload.FileName, name, StringComparison.OrdinalIgnoreCase));
+            payloads.Add(new AtomicFileSet.FilePayload(name, bytes));
+        }
+
         Generation = AtomicFileSet.Commit(Folder, payloads);
         foreach (IDocumentPart part in _parts)
             part.ClearDirty();
     }
 
+    private static Dictionary<string, byte[]> NormalizePayloads(
+        IReadOnlyDictionary<string, byte[]>? files)
+    {
+        var result = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        if (files == null)
+            return result;
+        foreach ((string name, byte[] bytes) in files)
+        {
+            string normalized = AtomicFileSet.NormalizeRelativeFileName(name);
+            if (AtomicFileSet.IsKernelFile(normalized))
+                throw new InvalidOperationException($"'{normalized}' is reserved by the kernel.");
+            result[normalized] = bytes;
+        }
+        return result;
+    }
+
     // -----------------------------------------------------------------
 
-    private sealed class PartReadContext(MapDocument doc, IEditorLog log) : IPartReadContext
+    private sealed class PartReadContext(
+        MapDocument doc,
+        IEditorLog log,
+        IReadOnlyDictionary<string, byte[]> overlays) : IPartReadContext
     {
         public string Folder => doc.Folder;
         public MapFormatKind Format => doc.Format;
@@ -159,11 +207,19 @@ public sealed class MapDocument : IMapDocument
 
         public byte[]? ReadFile(string fileName)
         {
+            fileName = AtomicFileSet.NormalizeRelativeFileName(fileName);
+            if (overlays.TryGetValue(fileName, out byte[]? live))
+                return live;
             string path = AtomicFileSet.ResolvePath(doc.Folder, fileName);
             return File.Exists(path) ? File.ReadAllBytes(path) : null;
         }
 
-        public bool FileExists(string fileName) => File.Exists(AtomicFileSet.ResolvePath(doc.Folder, fileName));
+        public bool FileExists(string fileName)
+        {
+            fileName = AtomicFileSet.NormalizeRelativeFileName(fileName);
+            return overlays.ContainsKey(fileName)
+                || File.Exists(AtomicFileSet.ResolvePath(doc.Folder, fileName));
+        }
 
         public T? GetPart<T>() where T : class, IDocumentPart => doc.GetPart<T>();
     }
