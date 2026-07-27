@@ -35,16 +35,28 @@ public static class W3xImporter
             : Path.Combine(Path.GetDirectoryName(archivePath) ?? ".", stem + "_extracted");
     }
 
-    /// <summary>Extracts the archive; returns (destination folder, extracted file count).</summary>
+    /// <summary>
+    /// Extracts the archive; returns (destination folder, extracted file count).
+    /// The extracted folder is the user's editable working copy, so a non-empty
+    /// default destination is never overwritten — a " (2)"-style sibling is used
+    /// instead (same policy as MapSession.NewMapFolder).
+    /// </summary>
     public static (string Folder, int Files) Extract(string archivePath, string? destination = null)
     {
         if (!File.Exists(archivePath))
             throw new FileNotFoundException($"找不到地图文件：{archivePath}");
-        var dest = destination ?? DefaultDestination(archivePath);
+        var dest = destination ?? UniqueDestination(archivePath);
+        if (destination != null
+            && Directory.Exists(dest)
+            && Directory.EnumerateFileSystemEntries(dest).Any())
+        {
+            throw new IOException($"目标文件夹已存在且非空，拒绝覆盖：{dest}");
+        }
         Directory.CreateDirectory(dest);
 
         using var archive = MpqArchive.Open(archivePath);
         var names = CollectFileNames(archive);
+        var failed = new List<string>();
         int extracted = 0;
         foreach (var name in names)
         {
@@ -59,12 +71,18 @@ public static class W3xImporter
             }
             catch
             {
-                // Per-file corruption / encryption must not kill the whole import.
+                // Per-file corruption / encryption must not kill the whole import,
+                // but the skipped names must not vanish silently either.
+                failed.Add(name);
             }
         }
+        if (failed.Count > 0)
+            Console.Error.WriteLine(
+                $"W3xImporter: {failed.Count} 个文件提取失败（损坏/加密）：{string.Join(", ", failed.Take(10))}"
+                + (failed.Count > 10 ? " …" : ""));
         if (extracted == 0 || !File.Exists(Path.Combine(dest, "war3map.w3e")))
             throw new InvalidDataException(
-                $"解包失败：未能从 {Path.GetFileName(archivePath)} 提取 war3map.w3e（共提取 {extracted} 个文件）。");
+                $"解包失败：未能从 {Path.GetFileName(archivePath)} 提取 war3map.w3e（共提取 {extracted} 个文件，失败 {failed.Count} 个）。");
         return (dest, extracted);
     }
 
@@ -98,6 +116,20 @@ public static class W3xImporter
             if (seen.Add(name) && archive.FileExists(name))
                 names.Add(name);
         return names;
+    }
+
+    /// <summary>Default destination, suffixed "&lt;name&gt; (2)" etc. while the folder is non-empty.</summary>
+    private static string UniqueDestination(string archivePath)
+    {
+        var stem = SanitizeName(Path.GetFileNameWithoutExtension(archivePath));
+        var root = GodotLauncher.FindProjectRoot();
+        string Base(string n) => root != null
+            ? Path.Combine(root, "war3", "maps", n, "source")
+            : Path.Combine(Path.GetDirectoryName(archivePath) ?? ".", n + "_extracted");
+        var dest = Base(stem);
+        for (int i = 2; Directory.Exists(dest) && Directory.EnumerateFileSystemEntries(dest).Any(); i++)
+            dest = Base($"{stem} ({i})");
+        return dest;
     }
 
     /// <summary>Joins an archive-internal path under root, rejecting traversal ("..", rooted paths).</summary>

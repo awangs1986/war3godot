@@ -64,6 +64,13 @@ public sealed class GlTerrainScene : IDisposable
     public (float CornerX, float CornerY, float Radius)? BrushRing;
     /// <summary>Tile grid overlay (HiveWE tile_grid: white 1px lines at tile boundaries).</summary>
     public bool ShowGrid = true;
+    public bool ShowWater = true;
+    public bool ShowCliffs = true;
+    public bool ShowBrush = true;
+    public bool ShowClickHelpers = true;
+    public bool ShowRegions;
+    public IReadOnlyList<W3RegionRecord> Regions { get; set; } = Array.Empty<W3RegionRecord>();
+    public bool LightingEnabled = true;
     /// <summary>Doodad/unit render pass (instanced static MDX + placeholders).</summary>
     public GlDoodadPass Placements { get; } = new();
     /// <summary>Single-slot plugin FBX/mesh preview (not written to placements).</summary>
@@ -399,12 +406,15 @@ public sealed class GlTerrainScene : IDisposable
             ClampCameraAboveGround();
             Matrix4x4 vp = Camera.ViewProjection(width / (float)Math.Max(height, 1));
             DrawGround(vp);
-            DrawCliffs(vp);
-            Placements.Render(vp, LightDirection, LightAmbient, LightScale, Compile);
-            PluginPreview.Render(vp, LightDirection, LightAmbient, LightScale, Compile);
-            DrawWater(vp, timeSeconds);
-            DrawBrushRing(vp);
-            DrawSelectionRings(vp);
+            if (ShowCliffs) DrawCliffs(vp);
+            float ambient = LightingEnabled ? LightAmbient : 1f;
+            float scale = LightingEnabled ? LightScale : 0f;
+            Placements.Render(vp, LightDirection, ambient, scale, Compile);
+            PluginPreview.Render(vp, LightDirection, ambient, scale, Compile);
+            if (ShowWater) DrawWater(vp, timeSeconds);
+            if (ShowBrush) DrawBrushRing(vp);
+            if (ShowRegions) DrawRegionRings(vp);
+            if (ShowClickHelpers) DrawSelectionRings(vp);
         }
     }
 
@@ -898,6 +908,37 @@ public sealed class GlTerrainScene : IDisposable
             points[i * 3 + 2] = _map.CenterOffsetY + py * W3TerrainMap.TileSize;
         }
         DrawRing(vp, points, new[] { 1f, 0.82f, 0.25f, 0.95f });
+    }
+
+    private void DrawRegionRings(Matrix4x4 vp)
+    {
+        if (_map == null || Regions.Count == 0)
+            return;
+        foreach (W3RegionRecord region in Regions)
+        {
+            float left = Math.Min(region.Left, region.Right);
+            float right = Math.Max(region.Left, region.Right);
+            float bottom = Math.Min(region.Bottom, region.Top);
+            float top = Math.Max(region.Bottom, region.Top);
+            int horizontal = Math.Max(2, (int)MathF.Ceiling((right - left) / 32f));
+            int vertical = Math.Max(2, (int)MathF.Ceiling((top - bottom) / 32f));
+            var points = new float[(horizontal * 2 + vertical * 2) * 3];
+            int at = 0;
+            void Add(float worldX, float worldZ)
+            {
+                points[at++] = worldX;
+                points[at++] = SampleHeightWorld(worldX, worldZ) + 8f;
+                points[at++] = worldZ;
+            }
+            for (int i = 0; i < horizontal; i++) Add(left + (right - left) * i / horizontal, bottom);
+            for (int i = 0; i < vertical; i++) Add(right, bottom + (top - bottom) * i / vertical);
+            for (int i = 0; i < horizontal; i++) Add(right - (right - left) * i / horizontal, top);
+            for (int i = 0; i < vertical; i++) Add(left, top - (top - bottom) * i / vertical);
+            DrawRing(vp, points, new[]
+            {
+                region.R / 255f, region.G / 255f, region.B / 255f, Math.Max(region.A / 255f, 0.35f),
+            });
+        }
     }
 
     /// <summary>WE-style selection circles under selected doodads/units.</summary>

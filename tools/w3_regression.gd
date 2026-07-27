@@ -19,15 +19,17 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-	var W3GridPathfinder = preload("res://addons/w3kit/w3_grid_pathfinder.gd")
-	var W3LevelData = preload("res://addons/w3kit/w3_level_data.gd")
-	var W3LevelImporter = preload("res://addons/w3kit/w3_level_importer.gd")
-	var W3MapWorld = preload("res://addons/w3kit/w3_map_world.gd")
-	var W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
-	var W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
+	var W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+	var W3GridPathfinder = preload("res://addons/w3kit_cs/Pathing/W3GridPathfinderBridge.cs")
+	var W3LevelData = preload("res://addons/w3kit_cs/Level/W3LevelDataResource.cs")
+	var W3LevelImporter = preload("res://addons/w3kit_cs/Level/W3LevelImporterBridge.cs")
+	var W3MapWorld = preload("res://addons/w3kit_cs/World/W3MapWorld.cs")
+	var W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
+	var W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+	var W3BinaryReader = preload("res://addons/w3kit_cs/IO/W3BinaryReaderBridge.cs")
 
-	var reader = preload("res://addons/w3kit/w3_binary_reader.gd").new(PackedByteArray([1, 2]))
+	var reader = W3BinaryReader.new()
+	reader.set_data(PackedByteArray([1, 2]))
 	_expect(reader.read_u32() == 0 and reader.failed, "binary reader rejects truncated scalar")
 	_expect(not W3BlpDecoder._valid_dimensions(100000, 100000), "BLP rejects oversized image allocation")
 	_expect(W3MdxModel._bounded_count(1000, 4, 12, 2000000) == 0, "MDX rejects impossible element count")
@@ -37,7 +39,7 @@ func _run() -> void:
 
 	_expect(W3EMap.load_bytes(PackedByteArray()) == null, "W3E rejects empty input")
 	var valid = W3EMap.make_test_map(8, 6)
-	var encoded: PackedByteArray = W3EMap.save_bytes(valid)
+	var encoded: PackedByteArray = valid.save_bytes()
 	var decoded = W3EMap.load_bytes(encoded)
 	_expect(decoded != null, "W3E roundtrip parses")
 	_expect(decoded != null and decoded.width == 9 and decoded.height == 7, "W3E dimensions roundtrip")
@@ -51,7 +53,7 @@ func _run() -> void:
 	var probe = v12.get_corner(3, 2)
 	probe.ground_texture = 33 # needs 6 bits: proves the wide field roundtrips
 	probe.boundary = true
-	var v12_decoded = W3EMap.load_bytes(W3EMap.save_bytes(v12))
+	var v12_decoded = W3EMap.load_bytes(v12.save_bytes())
 	_expect(v12_decoded != null and v12_decoded.version == 12, "W3E v12 roundtrip parses")
 	var v12_probe = v12_decoded.get_corner(3, 2) if v12_decoded != null else null
 	_expect(
@@ -66,9 +68,10 @@ func _run() -> void:
 			and v12_other.ramp == v11_other.ramp,
 		"W3E v12 and v11 agree on shared fields")
 
-	var pf = W3GridPathfinder.new(OpenGridSampler.new())
+	var pf = W3GridPathfinder.new()
+	pf.bind_sampler(OpenGridSampler.new())
 	_expect(pf._h(Vector2i.ZERO, Vector2i(1, 1)) == 14, "A* octile heuristic matches diagonal cost")
-	var route: Array[Vector2i] = pf.find_path(Vector2i.ZERO, Vector2i(3, 2))
+	var route = pf.find_path(Vector2i.ZERO, Vector2i(3, 2))
 	_expect(route.size() == 4 and route[0] == Vector2i.ZERO and route[-1] == Vector2i(3, 2), "A* returns optimal open-grid route")
 
 	var level = W3LevelData.from_w3e(decoded)
@@ -77,7 +80,7 @@ func _run() -> void:
 
 	var sample_dir := ProjectSettings.globalize_path("res://testdata/hivewe_sample")
 	var output := "user://w3_pipeline_regression.res"
-	var err: int = W3LevelImporter.import_to_file(sample_dir, output)
+	var err: int = int(W3LevelImporter.import_to_file(sample_dir, output))
 	_expect(err == OK, "importer writes binary LevelData")
 	var imported = ResourceLoader.load(output, "", ResourceLoader.CACHE_MODE_IGNORE)
 	_expect(imported != null and imported.has_method("is_valid") and imported.is_valid(), "imported LevelData reloads")

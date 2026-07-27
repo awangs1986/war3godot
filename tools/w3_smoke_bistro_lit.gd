@@ -18,7 +18,7 @@ func _run() -> void:
 	root.add_child(sun)
 
 	var settings = load("res://addons/w3kit/bistro_lit_default.tres")
-	preload("res://addons/w3kit/bistro_lit.gd").apply_to_scene(root, settings)
+	preload("res://addons/w3kit_cs/Lighting/BistroLightingController.cs").apply_to_scene(root, settings)
 	var ok := true
 	if we.environment == null:
 		ok = false
@@ -32,7 +32,7 @@ func _run() -> void:
 		if not (we.environment.sky.sky_material is ProceduralSkyMaterial):
 			ok = false
 	print("SMOKE sun energy=", sun.light_energy, " color=", sun.light_color)
-	preload("res://addons/w3kit/w3_war3_lit.gd").apply_to_scene(root, load("res://addons/w3kit/w3_lit_settings_preview.tres"))
+	preload("res://addons/w3kit_cs/Lighting/W3LightingController.cs").apply_to_scene(root, load("res://addons/w3kit/w3_lit_settings_preview.tres"))
 	print("SMOKE after War3 energy=", sun.light_energy)
 	print("SMOKE ok=", ok)
 	quit(0 if ok else 2)

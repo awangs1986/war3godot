@@ -1,10 +1,10 @@
 extends SceneTree
 func _init() -> void:
-	preload("res://addons/w3kit/w3_binary_reader.gd")
-	preload("res://addons/w3kit/w3_paths.gd")
-	var W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
+	preload("res://addons/w3kit_cs/IO/W3BinaryReaderBridge.cs")
+	preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+	var W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
 	var tp = W3TextureProvider.new()
-	tp.load_terrain_slk()
+	tp.load_terrain_slk("")
 	for tid in ["Cdrt", "Cgrs", "Cdrd", "Arck", "Ndrd"]:
 		var img: Image = tp.get_ground_image(tid)
 		if img == null:

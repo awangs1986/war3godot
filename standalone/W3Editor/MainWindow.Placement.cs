@@ -17,7 +17,7 @@ namespace W3Editor;
 /// </summary>
 public partial class MainWindow
 {
-    private enum EditMode { Terrain, Doodads, Units }
+    private enum EditMode { Terrain, Doodads, Units, Pathing, Regions }
 
     private IObjectCatalog? _catalog;
     private EditMode _mode = EditMode.Terrain;
@@ -63,11 +63,13 @@ public partial class MainWindow
     private void OnToolTabChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_syncingModeUi || ToolTabs == null) return;
-        switch (ToolTabs.SelectedIndex)
+        switch ((ToolTabs.SelectedItem as TabItem)?.Tag as string)
         {
-            case 0: SetMode(EditMode.Terrain); break;
-            case 1: SetMode(EditMode.Doodads); break;
-            case 2: SetMode(EditMode.Units); break;
+            case "panel.terrain": SetMode(EditMode.Terrain); break;
+            case "panel.doodads": SetMode(EditMode.Doodads); break;
+            case "panel.units": SetMode(EditMode.Units); break;
+            case "panel.pathing": SetMode(EditMode.Pathing); break;
+            case "panel.regions": SetMode(EditMode.Regions); break;
         }
     }
 
@@ -75,6 +77,8 @@ public partial class MainWindow
     {
         "Doodads" => EditMode.Doodads,
         "Units" => EditMode.Units,
+        "Pathing" => EditMode.Pathing,
+        "Regions" => EditMode.Regions,
         _ => EditMode.Terrain,
     };
 
@@ -87,21 +91,30 @@ public partial class MainWindow
         BtnModeTerrain.IsChecked = mode == EditMode.Terrain;
         BtnModeDoodads.IsChecked = mode == EditMode.Doodads;
         BtnModeUnits.IsChecked = mode == EditMode.Units;
-        ToolTabs.SelectedIndex = mode switch
+        BtnModePathing.IsChecked = mode == EditMode.Pathing;
+        BtnModeRegions.IsChecked = mode == EditMode.Regions;
+        ToolTabs.SelectedItem = mode switch
         {
-            EditMode.Doodads => 1,
-            EditMode.Units => 2,
-            _ => ToolTabs.SelectedIndex == 0 || mode == EditMode.Terrain ? 0 : ToolTabs.SelectedIndex,
+            EditMode.Doodads => DoodadsTab,
+            EditMode.Units => UnitsTab,
+            EditMode.Pathing => PathingTab,
+            EditMode.Regions => RegionsTab,
+            _ => TerrainTab,
         };
         _syncingModeUi = false;
 
-        GlView.Tool = mode == EditMode.Terrain
+        GlView.Tool = mode is EditMode.Terrain or EditMode.Pathing or EditMode.Regions
             ? Rendering.GlTerrainViewport.ViewportTool.TerrainBrush
             : Rendering.GlTerrainViewport.ViewportTool.Placement;
 
-        if (mode == EditMode.Terrain)
+        if (mode is EditMode.Terrain or EditMode.Pathing or EditMode.Regions)
         {
             DisarmPlacement();
+            SelectRect.IsVisible = false;
+            if (mode == EditMode.Pathing)
+                ActivatePathingMode();
+            else if (mode == EditMode.Regions)
+                ActivateRegionsMode();
         }
         else
         {

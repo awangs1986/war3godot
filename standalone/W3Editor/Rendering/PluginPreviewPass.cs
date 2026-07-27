@@ -211,13 +211,21 @@ public sealed class PluginPreviewPass
         return new RgbaImage(size, size, pixels);
     }
 
-    /// <summary>W3 axes → editor world, then translate to map-center ground.</summary>
+    /// <summary>
+    /// W3 axes (Z-up) → editor GL world (Y-up), then translate to map-center
+    /// ground. This is the -90° X rotation (x,y,z) → (x,z,-y) — the inverse of
+    /// the plugin's Y-up→Z-up import rotation. It must stay a proper rotation
+    /// (determinant +1): the old axis swap here mirrored the mesh and silently
+    /// cancelled an equal-and-opposite mirror in the import pipeline.
+    /// </summary>
     private static Matrix4x4 BuildModelMatrix(Vector3 origin)
     {
+        // Effective GLSL matrix is the transpose of this row-major value, so
+        // this is R^T for R:(x,y,z)->(x,z,-y).
         var perm = new Matrix4x4(
             1, 0, 0, 0,
             0, 0, 1, 0,
-            0, 1, 0, 0,
+            0, -1, 0, 0,
             0, 0, 0, 1);
         return perm * Matrix4x4.CreateTranslation(origin);
     }
@@ -261,10 +269,32 @@ public sealed class PluginPreviewPass
     {
         if (mesh.Indices.Length == 0)
             return Array.Empty<uint>();
-        var dst = new uint[mesh.Indices.Length];
-        for (int i = 0; i < mesh.Indices.Length; i++)
-            dst[i] = (uint)Math.Max(0, mesh.Indices[i]);
-        return dst;
+        // Plugin data is untrusted at this boundary: an index past the vertex
+        // buffer is undefined behavior on the GPU (garbage draw or device
+        // reset). Drop whole triangles with any out-of-range index, and any
+        // trailing partial triangle.
+        int vertCount = mesh.Positions.Length / 3;
+        var dst = new List<uint>(mesh.Indices.Length);
+        int triCount = mesh.Indices.Length / 3;
+        int dropped = mesh.Indices.Length - triCount * 3;
+        for (int t = 0; t < triCount; t++)
+        {
+            int a = mesh.Indices[t * 3];
+            int b = mesh.Indices[t * 3 + 1];
+            int c = mesh.Indices[t * 3 + 2];
+            if (a < 0 || b < 0 || c < 0 || a >= vertCount || b >= vertCount || c >= vertCount)
+            {
+                dropped += 3;
+                continue;
+            }
+            dst.Add((uint)a);
+            dst.Add((uint)b);
+            dst.Add((uint)c);
+        }
+        if (dropped > 0)
+            Console.Error.WriteLine(
+                $"PluginPreviewPass: dropped {dropped} out-of-range/partial indices (verts={vertCount})");
+        return dst.ToArray();
     }
 
     private void SetMat4(GL gl, string name, Matrix4x4 matrix)

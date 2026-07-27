@@ -19,8 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- R1 共享格式核心：不得反向依赖编辑器。 -->
+    <ProjectReference Include="..\W3Compat.Core\W3Compat.Core.csproj" />
     <ProjectReference Include="..\W3TerrainCore\W3TerrainCore.csproj" />
     <ProjectReference Include="..\W3Editor.PluginContracts\W3Editor.PluginContracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

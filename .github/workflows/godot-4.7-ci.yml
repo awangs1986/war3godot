@@ -5,24 +5,85 @@ on:
   pull_request:
 
 jobs:
-  regression:
+  dotnet:
+    # C# core + editor + format gates. Asset-free: the d1map gates run against
+    # the committed testdata/hivewe_sample instead of a local War3 unpack.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Install Godot 4.7.1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build editor, plugin, CLI
+        run: |
+          dotnet build standalone/W3Editor/W3Editor.csproj -c Release
+          dotnet build plugins/FbxImportPlugin/FbxImportPlugin.csproj -c Release
+          dotnet build standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release
+      - name: Module host accept (contracts v2, kernel, removal drills)
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --module-host-accept
+      - name: World-data GUI core accept (pathing and regions)
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --worlddata-edit-accept testdata/hivewe_sample .tmp/worlddata-edit-accept
+      - name: Plugin host selftest
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --plugin-host-selftest
+      - name: FBX import accept
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --fbx-import-accept
+      - name: Native roundtrip (hivewe sample)
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --native-roundtrip testdata/hivewe_sample
+      - name: d1map accept (hivewe sample)
+        run: dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --d1map-accept testdata/hivewe_sample
+
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install Godot 4.7.1 (.NET)
+        shell: bash
+        # The .NET build, not the classic one: project.godot enables C# plugins
+        # and w3kit preloads addons/w3kit_cs/*.cs — the classic binary cannot
+        # even parse those scripts.
+        run: |
+          curl -fL -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_mono_linux_x86_64.zip
+          unzip -q godot.zip
+          GODOT="$PWD/Godot_v4.7.1-stable_mono_linux_x86_64/Godot_v4.7.1-stable_mono_linux.x86_64"
+          chmod +x "$GODOT"
+          echo "GODOT=$GODOT" >> "$GITHUB_ENV"
+          "$GODOT" --version
+      - name: Build C# assemblies
+        run: dotnet build Diablo1Like.csproj
+      - name: Build editor-to-Godot map producer
+        run: dotnet build standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release
+      - name: Import project
+        run: '"$GODOT" --headless --path . --editor --quit'
+      - name: Editor to Godot WYSIWYG (d1map, all terrain fields and layout)
         shell: bash
         run: |
-          curl -fL -o godot.zip https://github.com/godotengine/godot-builds/releases/download/4.7.1-stable/Godot_v4.7.1-stable_linux.x86_64.zip
-          unzip -q godot.zip
-          mv Godot_v4.7.1-stable_linux.x86_64 godot
-          chmod +x godot
-          ./godot --version
-      - name: Import project
-        run: ./godot --headless --path . --editor --quit
+          dotnet run --project standalone/W3Editor.Mcp/W3Editor.Mcp.csproj -c Release --no-build -- --d1map-accept testdata/hivewe_sample .tmp/editor-godot-wysiwyg
+          "$GODOT" --headless --path . res://tools/w3_editor_godot_wysiwyg_smoke.tscn -- --map="$PWD/.tmp/editor-godot-wysiwyg"
+      - name: GDScript check sweep (addons/w3kit)
+        shell: bash
+        # Truncated/mangled GDScript once shipped inside a feature commit and
+        # went unnoticed; this fails the build on any parse error in w3kit.
+        run: |
+          fail=0
+          for f in addons/w3kit/*.gd; do
+            out=$("$GODOT" --headless --path . --check-only --script "res://$f" 2>&1 || true)
+            if echo "$out" | grep -qE "SCRIPT ERROR|Parse Error|Failed to load script"; then
+              echo "== $f =="
+              echo "$out"
+              fail=1
+            fi
+          done
+          exit $fail
+      - name: GD to C# GroundLayout packing crosscheck
+        run: '"$GODOT" --headless --path . --script res://tools/w3_ground_crosscheck.gd -- --asset-free'
       - name: Core regression
-        run: ./godot --headless --path . --script res://tools/w3_regression.gd
+        run: '"$GODOT" --headless --path . --script res://tools/w3_regression.gd'
       - name: W3 smoke
-        run: ./godot --headless --path . --script res://tools/w3_smoke.gd
+        run: '"$GODOT" --headless --path . --script res://tools/w3_smoke.gd'
       - name: Imported level runtime smoke
-        run: ./godot --headless --path . --script res://tools/w3_level_runtime_smoke.gd
+        run: '"$GODOT" --headless --path . --script res://tools/w3_level_runtime_smoke.gd'

@@ -2,12 +2,12 @@ extends SceneTree
 ## Data probe for terrain/cliff/shadow cross-checks against HiveWE/Warsmash.
 ## Usage: --script res://tools/w3_tile_crosscheck_probe.gd -- <tile_x> <tile_y>
 
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3GpuTerrain = preload("res://addons/w3kit/w3_gpu_terrain.gd")
-const W3CliffBuilder = preload("res://addons/w3kit/w3_cliff_builder.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
-const W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
-const W3DooParser = preload("res://addons/w3kit/w3_doo_parser.gd")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3GpuTerrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs")
+const W3CliffBuilder = preload("res://addons/w3kit_cs/Terrain/WarsmashCliffRenderer.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
+const W3HeightSampler = preload("res://addons/w3kit_cs/Terrain/W3HeightSamplerBridge.cs")
+const W3DooParser = preload("res://addons/w3kit_cs/Formats/W3DooParserBridge.cs")
 
 
 func _initialize() -> void:
@@ -31,7 +31,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var provider := W3TextureProvider.new()
-	provider.load_terrain_slk()
+	provider.load_terrain_slk("")
 	var terrain := W3GpuTerrain.new()
 	terrain.map = level
 	terrain.textures = provider
@@ -97,10 +97,11 @@ func _run() -> void:
 			placement, node.get_meta("w3_source_tile", Vector2i(-1, -1)),
 			node.get_meta("w3_model_rel", ""), node.position, aabbs,
 		])
-	var sampler := W3HeightSampler.new(level)
+	var sampler := W3HeightSampler.new() # C# 带参构造在 GDScript 侧不可用
+	sampler.bind_map(level)
 	var center: Vector3 = sampler.tile_center_world(target)
-	var placements: Array = W3DooParser.parse_doodads(_read_bytes("res://war3/maps/LostTemple/source/war3map.doo"))
-	placements.append_array(W3DooParser.parse_units(_read_bytes("res://war3/maps/LostTemple/source/war3mapUnits.doo")))
+	var placements: Array = W3DooParser.parse_doodads(_read_bytes("res://war3/maps/LostTemple/source/war3map.doo"), 0, 0)
+	placements.append_array(W3DooParser.parse_units(_read_bytes("res://war3/maps/LostTemple/source/war3mapUnits.doo"), 0, 0))
 	for item in placements:
 		var distance := Vector2(item.position.x - center.x, item.position.z - center.z).length()
 		if distance <= 640.0:

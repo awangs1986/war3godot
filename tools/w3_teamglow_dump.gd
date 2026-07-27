@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 ## What do the TeamGlow/TeamColor replaceables decode to? A failed decode
 ## renders the Blademaster's 322x322 additive ground quad as a solid square.
 
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-const W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+const W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
 
 
 func _initialize() -> void:
@@ -13,7 +13,7 @@ func _initialize() -> void:
 		"Textures/GenericGlow2c.blp",
 		"Textures/Red_Glow3.blp",
 	]:
-		var absolute := W3Paths.resolve_path(rel)
+		var absolute := W3Paths.new().resolve_path(rel)
 		if absolute.is_empty():
 			print(rel, " -> UNRESOLVED")
 			continue

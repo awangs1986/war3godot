@@ -9,10 +9,14 @@
     <!-- Standalone Godot projects have their own assemblies. Do not let the
          SDK's recursive C# glob compile them into the main game assembly. -->
     <Compile Remove="standalone/**/*.cs" />
+    <Compile Remove="plugins/**/*.cs" />
+    <Compile Remove=".godot/**/*.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Shared engine-agnostic terrain algorithm core (same library the
          standalone editor renderer consumes — guarantees 1:1 semantics). -->
     <ProjectReference Include="standalone/W3TerrainCore/W3TerrainCore.csproj" />
+    <!-- R1 共享 War3 格式核心，禁止携带 Godot 或编辑器依赖。 -->
+    <ProjectReference Include="standalone/W3Compat.Core/W3Compat.Core.csproj" />
   </ItemGroup>
 </Project>

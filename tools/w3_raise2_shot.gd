@@ -3,14 +3,12 @@ extends SceneTree
 ## Usage: --script res://tools/w3_raise2_shot.gd -- [w3ePath] [outPng] [mode]
 ## mode: "topdown" (default) or "perspective".
 
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3GpuTerrain = preload("res://addons/w3kit/w3_gpu_terrain.gd")
-const W3CliffBuilder = preload("res://addons/w3kit/w3_cliff_builder.gd")
-const W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
-const FreeFlyCamera = preload("res://scripts/w3/free_fly_camera.gd")
-const W3War3Lit = preload("res://addons/w3kit/w3_war3_lit.gd")
-
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3GpuTerrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs")
+const W3CliffBuilder = preload("res://addons/w3kit_cs/Terrain/WarsmashCliffRenderer.cs")
+const W3HeightSampler = preload("res://addons/w3kit_cs/Terrain/W3HeightSamplerBridge.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
+const FreeFlyCamera = preload("res://addons/w3kit_cs/Sandbox/FreeFlyCamera.cs")
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -27,13 +25,13 @@ func _run() -> void:
 		quit(1)
 		return
 	var provider := W3TextureProvider.new()
-	provider.load_terrain_slk()
+	provider.load_terrain_slk("")
 	var terrain := W3GpuTerrain.new()
 	root.add_child(terrain)
 	terrain.build(level, provider, PackedByteArray())
 	var cliffs := W3CliffBuilder.new()
 	root.add_child(cliffs)
-	cliffs.build(level, provider)
+	cliffs.build(level, provider, PackedByteArray())
 	printerr("W3_RAISE2_CLIFFS: %s" % [cliffs.get_counts()])
 	if mode == "flat":
 		terrain.set_flat_inspect(true)
@@ -55,7 +53,8 @@ func _run() -> void:
 		env.ambient_light_energy = 0.8
 		we.environment = env
 		root.add_child(we)
-	var sampler := W3HeightSampler.new(level)
+	var sampler := W3HeightSampler.new() # C# 带参构造在 GDScript 侧不可用
+	sampler.bind_map(level)
 	var center := Vector2i(level.tile_count_x() / 2, level.tile_count_y() / 2)
 	var cam: Camera3D = FreeFlyCamera.new()
 	root.add_child(cam)

@@ -7,16 +7,16 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var Importer = preload("res://addons/w3kit/w3_level_importer.gd")
-	var World = preload("res://addons/w3kit/w3_map_world.gd")
+	var Importer = preload("res://addons/w3kit_cs/Level/W3LevelImporterBridge.cs")
+	var World = preload("res://addons/w3kit_cs/World/W3MapWorld.cs")
 	var args := OS.get_cmdline_user_args()
 	var sample_dir := ProjectSettings.globalize_path("res://testdata/hivewe_sample")
 	if not args.is_empty():
 		sample_dir = args[0]
 	var output := "user://w3_runtime_smoke.res"
-	var import_error: int = Importer.import_to_file(sample_dir, output)
+	var import_error: int = int(Importer.import_to_file(sample_dir, output))
 	if import_error != OK:
-		printerr("RUNTIME_IMPORT_FAILED: ", Importer.last_error)
+		printerr("RUNTIME_IMPORT_FAILED: ", Importer.GetLastError())
 		quit(1)
 		return
 	var level = ResourceLoader.load(output, "", ResourceLoader.CACHE_MODE_IGNORE)

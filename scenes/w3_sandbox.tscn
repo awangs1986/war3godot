@@ -1,9 +1,9 @@
 [gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://scripts/w3/w3_sandbox.gd" id="1_sandbox"]
-[ext_resource type="Script" path="res://addons/w3kit/w3_map_world.gd" id="2_world"]
-[ext_resource type="Script" path="res://scripts/w3/w3_grid_player.gd" id="3_player"]
-[ext_resource type="Script" path="res://scripts/w3/free_fly_camera.gd" id="4_fly"]
+[ext_resource type="Script" path="res://addons/w3kit_cs/Sandbox/W3SandboxController.cs" id="1_sandbox"]
+[ext_resource type="Script" path="res://addons/w3kit_cs/World/W3MapWorld.cs" id="2_world"]
+[ext_resource type="Script" path="res://addons/w3kit_cs/Sandbox/W3GridPlayer.cs" id="3_player"]
+[ext_resource type="Script" path="res://addons/w3kit_cs/Sandbox/FreeFlyCamera.cs" id="4_fly"]
 [ext_resource type="Resource" path="res://addons/w3kit/ue_style_lit_default.tres" id="5_lit"]
 
 [node name="W3Sandbox" type="Node3D"]

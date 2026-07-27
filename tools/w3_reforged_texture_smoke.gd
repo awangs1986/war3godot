@@ -1,6 +1,6 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
+const W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
 
 
 func _initialize() -> void:

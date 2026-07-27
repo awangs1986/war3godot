@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>W3Editor.Modules.Ui</RootNamespace>
+    <AssemblyName>W3Editor.Modules.Ui</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.2" />
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+  </ItemGroup>
+</Project>

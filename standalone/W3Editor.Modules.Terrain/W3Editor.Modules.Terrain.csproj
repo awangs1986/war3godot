@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain assembly holding several independently-removable modules:
+       part.terrain, tool.terrain.height/texture/cliff/cell.
+
+       A module is a registration unit, not an assembly — grouping related
+       modules keeps the build tractable while modules.json stays the removal
+       granularity. This assembly must never reference another Modules.* one.
+
+       W3Editor.Core is referenced for W3EMap (format) and TerrainBrush (the
+       HiveWE-sealed operators). Algorithms stay there / in W3TerrainCore; this
+       assembly only assembles and adapts them to the contract. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>W3Editor.Modules.Terrain</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
+  </ItemGroup>
+
+</Project>

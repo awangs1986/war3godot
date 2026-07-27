@@ -22,7 +22,7 @@ func _run() -> void:
 		push_error("missing ue_style_lit_default.tres")
 		quit(1)
 		return
-	preload("res://addons/w3kit/ue_style_lit.gd").apply_to_scene(root, settings)
+	preload("res://addons/w3kit_cs/Lighting/UeStyleLightingController.cs").apply_to_scene(root, settings)
 
 	var ok := true
 	var backend: int = int(settings.sky_backend)
@@ -49,7 +49,7 @@ func _run() -> void:
 			ok = false
 
 	# Switch to War3 must tear down Sky3D.
-	preload("res://addons/w3kit/w3_war3_lit.gd").apply_to_scene(root, load("res://addons/w3kit/w3_lit_settings_preview.tres"))
+	preload("res://addons/w3kit_cs/Lighting/W3LightingController.cs").apply_to_scene(root, load("res://addons/w3kit/w3_lit_settings_preview.tres"))
 	await process_frame
 	await process_frame
 	# queue_free is deferred; force sync remove if still present.

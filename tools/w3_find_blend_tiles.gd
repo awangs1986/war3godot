@@ -1,11 +1,11 @@
-extends SceneTree
+﻿extends SceneTree
 ## Find tiles good for UV-orientation QA: exactly one corner differs (single-corner overlay).
 func _init() -> void:
-	preload("res://addons/w3kit/w3_binary_reader.gd")
-	preload("res://addons/w3kit/w3_paths.gd")
-	preload("res://addons/w3kit/w3_corner.gd")
-	var W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-	var W3MapArchive = preload("res://addons/w3kit/w3_map_archive.gd")
+	preload("res://addons/w3kit_cs/IO/W3BinaryReaderBridge.cs")
+	preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+	preload("res://addons/w3kit_cs/Native/W3CornerData.cs")
+	var W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+	var W3MapArchive = preload("res://addons/w3kit_cs/Archives/W3MapArchiveBridge.cs")
 	var arch = W3MapArchive.new()
 	arch.open(ProjectSettings.globalize_path("res://war3/maps/DotA_v6.80c"))
 	var map = W3EMap.load_file(arch.map_dir.path_join("war3map.w3e"))

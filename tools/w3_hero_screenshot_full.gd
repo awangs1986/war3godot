@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Full-sandbox visual evidence: load the real Lost Temple preview scene,
 ## wait for loading to finish, spawn the debug hero via the sandbox path and
 ## save RTS-angle screenshots. Run WITHOUT --headless.
@@ -25,17 +25,17 @@ func _tick() -> void:
 		return
 	match _phase:
 		0:
-			if bool(_sandbox.get("_loading")):
+			if bool(_sandbox.is_loading()):
 				return
 			_phase = 1
 			_wait = 0
 		1:
 			if _wait < 120: # settle: batches + animated spawns
 				return
-			var world = _sandbox.get("_world")
+			var world = _sandbox.get_world()
 			var mid := Vector2i(world.map.tile_count_x() / 2, world.map.tile_count_y() / 2)
 			var spawn: Vector3 = world.sampler.tile_center_world(mid)
-			var game: Node = _sandbox.get("_game")
+			var game: Node = _sandbox.get_game()
 			if game == null:
 				printerr("SHOT_FAILED: sandbox game layer missing")
 				quit(1)
@@ -62,7 +62,7 @@ func _tick() -> void:
 			if _wait < 10:
 				return
 			_save_shot("full_noshadow")
-			var game: Node = _sandbox.get("_game")
+			var game: Node = _sandbox.get_game()
 			if game != null and game.has_live_player():
 				var view: Node3D = game.renderer.view_node(game.player)
 				if view != null:

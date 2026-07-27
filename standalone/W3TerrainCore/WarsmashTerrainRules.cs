@@ -23,6 +23,7 @@ public sealed class WarsmashTerrainRules
     private readonly Func<int, string> _cliffModelDirectory;
     private readonly Func<int, string> _rampModelDirectory;
     private readonly Func<string, int, int> _cliffVariation;
+    private byte[]? _authoredCliffTextures;
 
     public WarsmashTerrainRules(
         W3TerrainMap map,
@@ -38,9 +39,30 @@ public sealed class WarsmashTerrainRules
         _cliffVariation = cliffVariation ?? ((_, authored) => Math.Max(0, authored));
     }
 
+    /// <summary>
+    /// The authored per-corner cliff texture as of the latest RebuildCliffs()
+    /// call, before the ramp branch stamps its resolved texture onto corners.
+    /// HiveWE's sealed real_tile_texture reads the AUTHORED value
+    /// (docs/GROUND_TEX_HIVEWE_SEAL.md) — GroundLayout must use this, not the
+    /// post-rebuild Corner.CliffTexture.
+    /// </summary>
+    public byte AuthoredCliffTexture(int x, int y)
+    {
+        int index = y * _map.Width + x;
+        return _authoredCliffTextures != null
+            && index >= 0 && index < _authoredCliffTextures.Length
+            ? _authoredCliffTextures[index]
+            : _map.GetCorner(x, y).CliffTexture;
+    }
+
     public IReadOnlyList<CliffPlacement> RebuildCliffs()
     {
         _map.InitializeRenderCorners();
+        // Every rebuild flow recreates the map mirror from authored data before
+        // calling this, so the corners are authored state at this point.
+        _authoredCliffTextures = new byte[_map.Width * _map.Height];
+        for (int i = 0; i < _map.Corners.Length && i < _authoredCliffTextures.Length; i++)
+            _authoredCliffTextures[i] = _map.Corners[i].CliffTexture;
         var cliffs = new List<CliffPlacement>();
         for (int x = 0; x < _map.TileWidth; x++)
         {

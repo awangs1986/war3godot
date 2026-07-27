@@ -1,7 +1,7 @@
 extends SceneTree
 ## Full-map regression for the default C# Warsmash terrain path.
 
-const W3MapWorld = preload("res://addons/w3kit/w3_map_world.gd")
+const W3MapWorld = preload("res://addons/w3kit_cs/World/W3MapWorld.cs")
 
 
 func _initialize() -> void:
@@ -11,7 +11,6 @@ func _initialize() -> void:
 func _run() -> void:
 	var world = W3MapWorld.new()
 	world.terrain_only = true
-	world.use_csharp_terrain = true
 	root.add_child(world)
 	var ok: bool = world.load_path(ProjectSettings.globalize_path("res://war3/maps/LostTemple/lost_temple.res"))
 	if not ok:

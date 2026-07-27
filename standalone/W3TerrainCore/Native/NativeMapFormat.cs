@@ -72,7 +72,14 @@ public static class NativeMapFormat
             {
                 string target = Path.Combine(dir, name);
                 string temp = target + $".tmp-{token}";
-                File.WriteAllBytes(temp, data);
+                // Flush to disk before rename: the rename alone can be journaled
+                // ahead of unflushed data blocks on power loss, leaving an empty
+                // file under the final name after the backup is gone.
+                using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    stream.Write(data, 0, data.Length);
+                    stream.Flush(flushToDisk: true);
+                }
                 temps[target] = temp;
             }
             foreach ((string target, _) in temps)
@@ -144,7 +151,32 @@ public static class NativeMapFormat
             w.WriteEndObject();
         }
         stream.WriteByte((byte)'\n');
-        return stream.ToArray();
+        return NormalizeNewlines(stream.ToArray());
+    }
+
+    /// <summary>
+    /// Utf8JsonWriter's indented output uses Environment.NewLine before .NET 9,
+    /// which would make map.json bytes differ between Windows and Linux writers.
+    /// Raw CR/LF bytes are illegal inside JSON strings (they are always escaped),
+    /// so rewriting CRLF to LF here cannot corrupt values.
+    /// </summary>
+    private static byte[] NormalizeNewlines(byte[] bytes)
+    {
+        int crlf = 0;
+        for (int i = 0; i + 1 < bytes.Length; i++)
+            if (bytes[i] == (byte)'\r' && bytes[i + 1] == (byte)'\n')
+                crlf++;
+        if (crlf == 0)
+            return bytes;
+        var result = new byte[bytes.Length - crlf];
+        int o = 0;
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            if (bytes[i] == (byte)'\r' && i + 1 < bytes.Length && bytes[i + 1] == (byte)'\n')
+                continue;
+            result[o++] = bytes[i];
+        }
+        return result;
     }
 
     private static byte[] WriteTerrain(NativeMap map)
@@ -257,19 +289,34 @@ public static class NativeMapFormat
 
     private static void ReadManifest(NativeMap map, byte[] bytes)
     {
-        using var doc = JsonDocument.Parse(bytes);
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(bytes);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException("map.json is not valid JSON", ex);
+        }
+        using var _ = doc;
         var root = doc.RootElement;
-        if (root.GetProperty("format").GetString() != "d1map")
+        if (!root.TryGetProperty("format", out var format)
+            || format.GetString() != "d1map")
             throw new InvalidDataException("map.json is not a d1map manifest");
-        int version = root.GetProperty("version").GetInt32();
+        if (!root.TryGetProperty("version", out var versionProp)
+            || versionProp.ValueKind != JsonValueKind.Number)
+            throw new InvalidDataException("map.json is missing a numeric \"version\"");
+        int version = versionProp.GetInt32();
         if (version is < 1 or > Version)
             throw new InvalidDataException($"unsupported d1map version {version}");
-        map.Name = root.GetProperty("name").GetString() ?? "";
+        map.Name = root.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "";
         var t = map.Terrain;
-        foreach (var id in root.GetProperty("groundTextures").EnumerateArray())
-            t.GroundTilesets.Add(id.GetString() ?? "");
-        foreach (var id in root.GetProperty("cliffTextures").EnumerateArray())
-            t.CliffTilesets.Add(id.GetString() ?? "");
+        if (root.TryGetProperty("groundTextures", out var ground))
+            foreach (var id in ground.EnumerateArray())
+                t.GroundTilesets.Add(id.GetString() ?? "");
+        if (root.TryGetProperty("cliffTextures", out var cliff))
+            foreach (var id in cliff.EnumerateArray())
+                t.CliffTilesets.Add(id.GetString() ?? "");
         if (root.TryGetProperty("legacy", out var legacy))
         {
             if (legacy.TryGetProperty("tileset", out var ts) && ts.GetString() is { Length: 1 } s)
@@ -291,6 +338,8 @@ public static class NativeMapFormat
             switch (tag)
             {
                 case "INFO":
+                    if (sawInfo)
+                        throw new InvalidDataException("terrain.bin: duplicate INFO section");
                     if (span.Length < 16)
                         throw new InvalidDataException("INFO section too short");
                     t.Width = BinaryPrimitives.ReadInt32LittleEndian(span);
@@ -305,6 +354,8 @@ public static class NativeMapFormat
 
                 case "CORN":
                 {
+                    if (sawCorners)
+                        throw new InvalidDataException("terrain.bin: duplicate CORN section");
                     if (!sawInfo)
                         throw new InvalidDataException("CORN section before INFO");
                     int count = t.Width * t.Height;
@@ -386,6 +437,9 @@ public static class NativeMapFormat
                         $"placements.bin: {record} id is not valid UTF-8", ex);
                 }
                 offset += idLen;
+                // Fixed part after id: variation(4) + 7 floats(28) + owner(1)
+                // + flags(1) + refId(4) = 38 bytes; the 2-byte extension length
+                // is checked separately below.
                 RequirePlacementBytes(span, offset, 38, record);
                 p.Variation = ReadI32(span, ref offset);
                 p.X = ReadF32(span, ref offset);

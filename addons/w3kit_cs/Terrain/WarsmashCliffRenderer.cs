@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Godot;
+using Diablo1Like.W3.Mdx;
 using GDictionary = Godot.Collections.Dictionary;
 
 namespace Diablo1Like.W3.Terrain;
@@ -21,7 +22,6 @@ public partial class WarsmashCliffRenderer : Node3D
     private sealed class CliffBatchBuilder
     {
         public readonly SurfaceTool Surface = new();
-        public Material? Material;
         public int InstanceCount;
 
         public CliffBatchBuilder() => Surface.Begin(Mesh.PrimitiveType.Triangles);
@@ -61,7 +61,15 @@ public partial class WarsmashCliffRenderer : Node3D
             rel => !string.IsNullOrEmpty(ResolvePath(rel)),
             texture => TypeFor(texture).CliffModelDir,
             texture => TypeFor(texture).RampModelDir,
-            (tag, authored) => Math.Clamp(authored, 0, WarsmashTerrainRules.CliffVariationMaximum.GetValueOrDefault(tag, 0)));
+            // 与 GDS w3_cliff_builder._cliff_variation 一致：modulo，而非 clamp
+            (tag, authored) =>
+            {
+                int maxVariation = WarsmashTerrainRules.CliffVariationMaximum.GetValueOrDefault(tag, 0);
+                if (maxVariation <= 0)
+                    return 0;
+                int v = authored % (maxVariation + 1);
+                return v < 0 ? v + maxVariation + 1 : v;
+            });
         IReadOnlyList<WarsmashTerrainRules.CliffPlacement> placements = rules.RebuildCliffs();
         foreach (WarsmashTerrainRules.CliffPlacement placement in placements)
             Spawn(placement);
@@ -114,10 +122,10 @@ public partial class WarsmashCliffRenderer : Node3D
             _missing++;
             return;
         }
-        Script modelScript = GD.Load<Script>("res://addons/w3kit/w3_mdx_model.gd");
         if (!_modelCache.TryGetValue(absolutePath, out Variant model))
         {
-            model = modelScript.Call("load_file", absolutePath);
+            W3MdxModel? loaded = W3MdxModel.LoadFile(absolutePath);
+            model = loaded is null ? new Variant() : Variant.From(loaded);
             _modelCache[absolutePath] = model;
         }
         if (model.VariantType == Variant.Type.Nil)
@@ -139,9 +147,8 @@ public partial class WarsmashCliffRenderer : Node3D
         node.SetMeta("w3_placement_tile", new Vector2I(placement.X, placement.Y));
         AddChild(node);
 
-        Script instanceScript = GD.Load<Script>("res://addons/w3kit/w3_mdx_instance.gd");
-        var instance = new Node3D();
-        instance.SetScript(instanceScript);
+        // 悬崖实例直接构造 C# W3MdxInstance（GDS→C# 迁移后，w3_mdx_instance.gd 已删除）。
+        Node3D instance = new W3MdxInstance();
         node.AddChild(instance);
         CliffType type = TypeFor(placement.CliffTexture);
         // HiveWE/Warsmash HD terrain resolves cliff replaceables as DDS. The
@@ -203,7 +210,7 @@ public partial class WarsmashCliffRenderer : Node3D
             Transform3D toRenderer = rendererInverse * source.GlobalTransform;
             for (int surface = 0; surface < source.Mesh.GetSurfaceCount(); surface++)
                 builder.Surface.AppendFrom(source.Mesh, surface, toRenderer);
-            builder.Material ??= source.MaterialOverride ?? source.Mesh.SurfaceGetMaterial(0);
+            // 不把多材质压成单一 MaterialOverride；由 ArrayMesh surface 材质保留（对齐 GDS）
         }
         builder.InstanceCount++;
         placementNode.RemoveChild(instance);
@@ -222,7 +229,7 @@ public partial class WarsmashCliffRenderer : Node3D
             {
                 Name = $"CliffBatch_{index++}",
                 Mesh = mesh,
-                MaterialOverride = pair.Value.Material,
+                // 保留各 surface 材质，避免多 geoset 悬崖被单一材质覆盖
                 CastShadow = GeometryInstance3D.ShadowCastingSetting.On,
             };
             batch.SetMeta("w3_cliff_batch", true);
@@ -339,9 +346,8 @@ public partial class WarsmashCliffRenderer : Node3D
         if (resolver != null && resolver.HasMethod("resolve_path"))
             return resolver.Call("resolve_path", relative).AsString();
         // Bare W3EMap resource (no archive attached): fall back to the shared
-        // game-asset roots, matching W3CliffBuilder's W3Paths.resolve_path.
-        var paths = GD.Load<GDScript>("res://addons/w3kit/w3_paths.gd");
-        return paths.Call("resolve_game_path", relative).AsString();
+        // game-asset roots (classic → Reforged), matching the archive's own resolve_path.
+        return new Diablo1Like.W3.Paths.W3PathResolverBridge().ResolveGamePath(relative);
     }
 
     private void ClearRenderer()

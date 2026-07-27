@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>W3Editor.Modules.WorldData</RootNamespace>
+    <AssemblyName>W3Editor.Modules.WorldData</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
+  </ItemGroup>
+</Project>

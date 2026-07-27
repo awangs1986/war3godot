@@ -1,8 +1,8 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
+const W3MdxInstance = preload("res://addons/w3kit_cs/Mdx/W3MdxInstance.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
 
 
 func _initialize() -> void:
@@ -46,7 +46,7 @@ func _run() -> void:
 	mine_instance._anim_active = true
 	var sequence = mine.sequences[mine_instance._seq_index]
 	var sample_time := int(sequence.interval_start + mine_instance._anim_time)
-	var worlds := preload("res://addons/w3kit/w3_mdx_anim.gd").compute_world_matrices(
+	var worlds := preload("res://addons/w3kit_cs/Mdx/W3MdxAnim.cs").compute_world_matrices(
 		mine.bones, sample_time, sequence.interval_start, sequence.interval_end)
 	mine_instance._update_model_effects(
 		worlds, sample_time, sequence.interval_start, sequence.interval_end)

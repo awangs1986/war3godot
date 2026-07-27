@@ -18,6 +18,8 @@ public enum BrushOp
     Lower,
     Plateau,
     Smooth,
+    /// <summary>HiveWE exposes this deformation but its current operator is a no-op.</summary>
+    Ripple,
     CliffLower2,
     CliffLower1,
     CliffLevel,
@@ -26,6 +28,8 @@ public enum BrushOp
     WaterShallow,
     WaterDeep,
     Ramp,
+    BoundaryAdd,
+    BoundaryRemove,
     /// <summary>Internal: right-button erase for the water tools (not a palette entry).</summary>
     WaterErase,
 }
@@ -59,7 +63,7 @@ public sealed class BrushSettings
 
 /// <summary>
 /// Per-stroke state. HiveWE computes stroke targets once in apply_begin from
-/// the corner under the initial press; stamps then reuse them.
+/// the integer center of the clipped initial brush area; stamps then reuse them.
 /// </summary>
 public sealed class BrushStroke
 {
@@ -104,12 +108,6 @@ public static class TerrainBrush
         if (op == BrushOp.None)
             return;
 
-        if (!stroke.Initialized)
-        {
-            InitializeStroke(map, cx, cy, op, stroke);
-            stroke.Initialized = true;
-        }
-
         int uiSize = Math.Clamp(s.Radius, 1, 32);
         int internalSize = uiSize * SizeGranularity;
         // TerrainBrush::get_unclipped_pos (corner type)
@@ -124,8 +122,14 @@ public static class TerrainBrush
 
         int adjX = Math.Min(posX, 0);
         int adjY = Math.Min(posY, 0);
-        float centerX = areaX + (areaR - areaX) * 0.5f;
-        float centerY = areaY + (areaB - areaY) * 0.5f;
+        // HiveWE stores these in int (float expression truncates toward zero).
+        int centerX = (int)(areaX + (areaR - areaX) * 0.5f);
+        int centerY = (int)(areaY + (areaB - areaY) * 0.5f);
+        if (!stroke.Initialized)
+        {
+            InitializeStroke(map, centerX, centerY, op, stroke);
+            stroke.Initialized = true;
+        }
 
         bool Inside(int i, int j)
         {
@@ -143,6 +147,7 @@ public static class TerrainBrush
             case BrushOp.Lower:
             case BrushOp.Plateau:
             case BrushOp.Smooth:
+            case BrushOp.Ripple:
                 ApplyHeight(map, areaX, areaY, areaR, areaB, Inside, centerX, centerY,
                     internalSize, op, frameDelta, stroke);
                 break;
@@ -154,6 +159,10 @@ public static class TerrainBrush
                 break;
             case BrushOp.WaterErase:
                 ApplyWaterErase(map, areaX, areaY, areaR, areaB, Inside);
+                break;
+            case BrushOp.BoundaryAdd:
+            case BrushOp.BoundaryRemove:
+                ApplyBoundary(map, areaX, areaY, areaR, areaB, Inside, op == BrushOp.BoundaryAdd);
                 break;
             default:
                 ApplyCliffs(map, areaX, areaY, areaR, areaB, Inside, posX, posY, uiSize, s, op, stroke);
@@ -187,6 +196,8 @@ public static class TerrainBrush
             BrushOp.CliffLower2 => BrushOp.CliffRaise2,
             BrushOp.WaterShallow => BrushOp.WaterErase,
             BrushOp.WaterDeep => BrushOp.WaterErase,
+            BrushOp.BoundaryAdd => BrushOp.BoundaryRemove,
+            BrushOp.BoundaryRemove => BrushOp.BoundaryAdd,
             _ => op,
         };
     }
@@ -271,7 +282,7 @@ public static class TerrainBrush
 
     private static void ApplyHeight(
         W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, float centerX, float centerY,
+        Func<int, int, bool> inside, int centerX, int centerY,
         int internalSize, BrushOp op, float frameDelta, BrushStroke stroke)
     {
         int areaW = ar - ax;
@@ -290,6 +301,11 @@ public static class TerrainBrush
                 var c = map.GetCorner(i, j)!;
                 switch (op)
                 {
+                    case BrushOp.Ripple:
+                        // HiveWE terrain_operators.cpp currently leaves the
+                        // ripple branch empty; preserve that authoritative
+                        // behavior until its operator gains semantics.
+                        break;
                     case BrushOp.Raise:
                     case BrushOp.Lower:
                     {
@@ -305,6 +321,18 @@ public static class TerrainBrush
                         break;
                 }
             }
+        }
+    }
+
+    private static void ApplyBoundary(
+        W3EMap map, int ax, int ay, int ar, int ab,
+        Func<int, int, bool> inside, bool add)
+    {
+        for (int j = ay; j < ab; j++)
+        for (int i = ax; i < ar; i++)
+        {
+            if (inside(i, j))
+                map.GetCorner(i, j)!.Boundary = add;
         }
     }
 

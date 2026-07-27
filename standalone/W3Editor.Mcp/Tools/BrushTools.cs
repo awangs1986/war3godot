@@ -20,11 +20,11 @@ public sealed class BrushTools(EditorSession session)
         [Description("Strength 0–1")] float strength = 0.6f,
         [Description("Ground texture palette index for Texture op")] int textureIndex = 0,
         [Description("Erase / reverse (water remove, ramp clear, etc.)")] bool erase = false)
-        => session.BrushStamp(op, cx, cy, toCx, toCy, radius, strength, textureIndex, erase);
+        => session.Locked(() => session.BrushStamp(op, cx, cy, toCx, toCy, radius, strength, textureIndex, erase));
 
     [McpServerTool(Name = "undo"), Description("Undo the last terrain stroke or placement edit.")]
-    public string Undo() => session.Undo();
+    public string Undo() => session.Locked(session.Undo);
 
     [McpServerTool(Name = "redo"), Description("Redo the last undone edit.")]
-    public string Redo() => session.Redo();
+    public string Redo() => session.Locked(session.Redo);
 }

@@ -1,4 +1,5 @@
 using System.IO;
+using Diablo1Like.MapRuntime;
 using Godot;
 
 namespace Diablo1Like.W3.Terrain;
@@ -12,6 +13,12 @@ public static class W3TerrainMapBridge
 {
     public static W3TerrainMap FromGodotResource(GodotObject resource)
     {
+        // Native d1map and W3EMapBridge both use this packed C# boundary.
+        // Keep the renderer/sampler path compile-time checked and reserve the
+        // dynamic adapter below for legacy Resource/GDS-compatible inputs.
+        if (resource is W3PackedTerrainMap packed)
+            return packed.CreateCoreSnapshot();
+
         Variant versionValue = resource.Get(HasProperty(resource, "w3e_version") ? "w3e_version" : "version");
         var map = new W3TerrainMap
         {

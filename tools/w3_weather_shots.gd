@@ -3,8 +3,8 @@ extends SceneTree
 ## Temple + player unit, one screenshot per weather into user://w3_shots/.
 ## Run WITHOUT --headless.
 
-const W3War3Lit = preload("res://addons/w3kit/w3_war3_lit.gd")
-const W3LitSettings = preload("res://addons/w3kit/w3_lit_settings.gd")
+const W3LightingController = preload("res://addons/w3kit_cs/Lighting/W3LightingController.cs")
+const W3LitSettings = preload("res://addons/w3kit_cs/Lighting/W3LitSettings.cs")
 
 var _world
 var _game: Node
@@ -17,7 +17,7 @@ var _weathers := ["default", "sun", "overcast"]
 func _initialize() -> void:
 	root.mode = Window.MODE_WINDOWED
 	root.size = Vector2i(1280, 720)
-	var World = load("res://addons/w3kit/w3_map_world.gd")
+	var World = load("res://addons/w3kit_cs/World/W3MapWorld.cs")
 	_world = World.new()
 	_world.name = "W3MapWorld" # apply_to_scene syncs terrain lighting by name
 	_world.terrain_only = true
@@ -33,7 +33,7 @@ func _setup() -> void:
 		return
 	var mid := Vector2i(_world.map.tile_count_x() / 2, _world.map.tile_count_y() / 2)
 	_spawn = _world.sampler.tile_center_world(mid)
-	var GameScript = load("res://scripts/game/w3_game.gd")
+	var GameScript = load("res://addons/w3kit_cs/Game/W3GameRuntime.cs")
 	_game = GameScript.new()
 	root.add_child(_game)
 	if not _game.setup(_world) or _game.spawn_player(_spawn) == null:
@@ -55,7 +55,7 @@ func _apply_weather(weather: String) -> void:
 	var s := W3LitSettings.new()
 	s.weather = weather
 	s.fog_enabled = weather == "overcast"
-	W3War3Lit.apply_to_scene(root, s)
+	W3LightingController.apply_to_scene(root, s)
 	print("weather applied: ", weather)
 
 

@@ -16,6 +16,8 @@ public sealed class OverlayOptions
     public IReadOnlyList<W3Placement>? Units;
     public bool ShowDoodads;
     public bool ShowUnits;
+    public IReadOnlyList<W3RegionRecord>? Regions;
+    public bool ShowRegions;
 }
 
 /// <summary>
@@ -148,6 +150,37 @@ public static class MinimapRenderer
                     : 0xFF6FB7FF;                        // player-owned
                 DrawDot(map, p, color, p.IsStartLocation ? r + 2 : r, px, stride, w, h, scale);
             }
+        }
+
+        // ---- region rectangles ----
+        if (o.ShowRegions && o.Regions != null)
+        {
+            foreach (W3RegionRecord region in o.Regions)
+                DrawRegion(map, region, px, stride, w, h, scale);
+        }
+    }
+
+    private static unsafe void DrawRegion(W3EMap map, W3RegionRecord region,
+        uint* px, int stride, int w, int h, int scale)
+    {
+        float fx0 = (region.Left - map.CenterOffsetX) / W3EMap.TileSize;
+        float fx1 = (region.Right - map.CenterOffsetX) / W3EMap.TileSize;
+        float fy0 = (region.Bottom - map.CenterOffsetY) / W3EMap.TileSize;
+        float fy1 = (region.Top - map.CenterOffsetY) / W3EMap.TileSize;
+        int x0 = Math.Clamp((int)MathF.Round(Math.Min(fx0, fx1) * scale), 0, w - 1);
+        int x1 = Math.Clamp((int)MathF.Round(Math.Max(fx0, fx1) * scale), 0, w - 1);
+        int y0 = Math.Clamp((int)MathF.Round((map.Height - 1 - Math.Max(fy0, fy1)) * scale), 0, h - 1);
+        int y1 = Math.Clamp((int)MathF.Round((map.Height - 1 - Math.Min(fy0, fy1)) * scale), 0, h - 1);
+        if (x1 < x0 || y1 < y0) return;
+        uint color = 0xFF000000u | ((uint)region.R << 16) | ((uint)region.G << 8) | region.B;
+        for (int y = y0; y <= y1; y++)
+        for (int x = x0; x <= x1; x++)
+        {
+            bool border = x - x0 < 2 || x1 - x < 2 || y - y0 < 2 || y1 - y < 2;
+            if (border)
+                px[y * stride + x] = color;
+            else if (((x + y) & 3) == 0)
+                px[y * stride + x] = Blend(px[y * stride + x], color, 0.16f);
         }
     }
 
