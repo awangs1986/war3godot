@@ -1,4 +1,4 @@
-# 有超时保护的 Godot 无头脚本运行器：脚本报错时 SceneTree 不会 quit()，会永久挂起，
+# 有超时保护的 Godot 无头场景/脚本运行器：脚本报错时 SceneTree 不会 quit()，会永久挂起，
 # 因此这里统一用 Start-Process + Wait-Process -Timeout，超时强杀并输出 TIMEOUT 标记。
 param(
   [Parameter(Mandatory = $true)][string]$Script,
@@ -6,9 +6,15 @@ param(
   [string[]]$ScriptArgs = @()
 )
 
-$godot = "D:\godot\4.7.1\Godot_v4.7.1-stable_mono_win64_console.exe"
+$godot = if ($env:GODOT4_NET) { $env:GODOT4_NET } else { "D:\godot\4.7.1\Godot_v4.7.1-stable_mono_win64_console.exe" }
 $out = Join-Path $env:TEMP ("gate_out_" + [System.IO.Path]::GetRandomFileName() + ".txt")
-$argList = @("--headless", "--path", ".", "-s", $Script)
+# .tscn / .scn：作为主场景加载；其余仍走 -s 脚本入口（遗留 GDS 探针）
+$isScene = $Script -match '\.(tscn|scn)$'
+$argList = if ($isScene) {
+  @("--headless", "--path", ".", $Script)
+} else {
+  @("--headless", "--path", ".", "-s", $Script)
+}
 if ($ScriptArgs.Count -gt 0) { $argList += "--"; $argList += $ScriptArgs }
 
 $p = Start-Process -FilePath $godot -ArgumentList $argList -NoNewWindow -PassThru `

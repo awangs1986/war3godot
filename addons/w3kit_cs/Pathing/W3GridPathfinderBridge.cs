@@ -102,7 +102,7 @@ public partial class W3GridPathfinderBridge : RefCounted
         return 10 * (dx + dy) - 6 * Math.Min(dx, dy);
     }
 
-    /// <summary>GDS/回归测试别名：tools/w3_regression.gd 直接校验 _h。</summary>
+    /// <summary>回归测试别名：tools/W3Regression.cs 直接校验 _h。</summary>
     public int _h(Vector2I a, Vector2I b) => Heuristic(a, b);
 
     private static int H(Vector2I a, Vector2I b) => Heuristic(a, b);

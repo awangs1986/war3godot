@@ -18,10 +18,10 @@ See [docs/w3_0.1.md](docs/w3_0.1.md). Requires your own unpacked War3 files for 
 
 ```bash
 godot --headless --path . -s res://tools/check_asset_root.gd
-godot --headless --path . -s res://tools/w3_regression.gd
-godot --headless --path . -s res://tools/w3_smoke.gd
-godot --headless --path . -s res://tools/w3_regression.gd
-godot --headless --path . -s res://tools/w3_level_runtime_smoke.gd
+godot --headless --path . res://tools/w3_ground_crosscheck.tscn -- --asset-free
+godot --headless --path . res://tools/w3_regression.tscn
+godot --headless --path . res://tools/w3_smoke.tscn
+godot --headless --path . res://tools/w3_level_runtime_smoke.tscn
 ```
 
 ## Import pipeline

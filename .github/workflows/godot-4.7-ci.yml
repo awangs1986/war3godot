@@ -80,10 +80,10 @@ jobs:
           done
           exit $fail
       - name: GD to C# GroundLayout packing crosscheck
-        run: '"$GODOT" --headless --path . --script res://tools/w3_ground_crosscheck.gd -- --asset-free'
+        run: '"$GODOT" --headless --path . res://tools/w3_ground_crosscheck.tscn -- --asset-free'
       - name: Core regression
-        run: '"$GODOT" --headless --path . --script res://tools/w3_regression.gd'
+        run: '"$GODOT" --headless --path . res://tools/w3_regression.tscn'
       - name: W3 smoke
-        run: '"$GODOT" --headless --path . --script res://tools/w3_smoke.gd'
+        run: '"$GODOT" --headless --path . res://tools/w3_smoke.tscn'
       - name: Imported level runtime smoke
-        run: '"$GODOT" --headless --path . --script res://tools/w3_level_runtime_smoke.gd'
+        run: '"$GODOT" --headless --path . res://tools/w3_level_runtime_smoke.tscn'

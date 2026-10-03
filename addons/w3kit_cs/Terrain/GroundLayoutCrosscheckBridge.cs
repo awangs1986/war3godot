@@ -4,12 +4,8 @@ using System.Linq;
 namespace Diablo1Like.W3.Terrain;
 
 /// <summary>
-/// Test-only Godot bridge for tools/w3_ground_crosscheck.gd (R6: sole C#
-/// authority — the GDS reference renderer w3_gpu_terrain.gd it used to be
-/// diffed against is gone). Builds the production WarsmashTerrainRules +
-/// GroundLayout pipeline once via <see cref="Prepare"/> and exposes the
-/// per-corner/per-tile queries the crosscheck needs against its own
-/// independently hand-derived HiveWE expectations.
+/// 测试用桥：供 tools/W3GroundCrosscheck.cs 对照 HiveWE 角点贴图期望。
+/// 一次性构建生产侧 WarsmashTerrainRules + GroundLayout，暴露角点/瓦片查询。
 /// </summary>
 [GlobalClass]
 public partial class GroundLayoutCrosscheckBridge : RefCounted
