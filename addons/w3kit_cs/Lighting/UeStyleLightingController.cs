@@ -1,5 +1,4 @@
 using Godot;
-using Diablo1Like.W3.World;
 
 namespace Diablo1Like.W3.Lighting;
 
@@ -36,27 +35,6 @@ public partial class UeStyleLightingController : RefCounted
             EnsureKeyLight(root, s);
             DisableFillLight(root);
         }
-
-        SyncTerrainOpenRealmLight(root, s);
-        if (root.IsInsideTree() && backend == UeStyleLitSettings.SkyBackend.Sky3D)
-        {
-            SceneTree? tree = root.GetTree();
-            if (tree != null)
-            {
-                // Sky3D 的 SunLight 在 NOTIFICATION_ENTER_TREE 之后才就绪，延迟一帧再同步方向光。
-                tree.CreateTimer(0.05).Timeout += () =>
-                {
-                    if (GodotObject.IsInstanceValid(root))
-                    {
-                        SyncTerrainOpenRealmLight(root, s);
-                        W3LightingController.SetModelsReceiveLights(root, true);
-                        W3LightingController.SetTerrainReceiveLights(root, true);
-                    }
-                };
-            }
-        }
-        W3LightingController.SetModelsReceiveLights(root, true);
-        W3LightingController.SetTerrainReceiveLights(root, true);
     }
 
     public static void apply_to_scene(Node root, Resource? settings = null) => ApplyToScene(root, settings);
@@ -100,6 +78,17 @@ public partial class UeStyleLightingController : RefCounted
 
     private static void ApplySky3D(Node root, UeStyleLitSettings s)
     {
+        GDScript? sky3DScript = LoadSky3DScript();
+        if (sky3DScript == null)
+        {
+            GD.PushWarning("UeStyleLightingController: Sky3D script load failed");
+            TeardownSky3D(root);
+            EnsureEnvironmentPhysical(root, s);
+            EnsureKeyLight(root, s);
+            DisableFillLight(root);
+            return;
+        }
+
         // 隐藏沙盒自带的关键光——Sky3D 拥有 SunLight / MoonLight。
         var oldSun = root.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
         if (oldSun != null)
@@ -113,15 +102,9 @@ public partial class UeStyleLightingController : RefCounted
         // 卸下普通 WorldEnvironment，让 Sky3D（同样是 WorldEnvironment）成为生效实例。
         var we = root.GetNodeOrNull<WorldEnvironment>("WorldEnvironment");
         if (we != null && we.Name != Sky3DNodeName)
-            we.Environment = null;
-
-        GDScript? sky3DScript = LoadSky3DScript();
-        if (sky3DScript == null)
         {
-            GD.PushWarning("UeStyleLightingController: Sky3D script load failed");
-            EnsureEnvironmentPhysical(root, s);
-            EnsureKeyLight(root, s);
-            return;
+            we.Environment = null;
+            we.CameraAttributes = null;
         }
 
         Node? sky3d = root.GetNodeOrNull(Sky3DNodeName);
@@ -191,40 +174,6 @@ public partial class UeStyleLightingController : RefCounted
             sunLight.DirectionalShadowMode = DirectionalLight3D.ShadowMode.Parallel4Splits;
             sunLight.DirectionalShadowMaxDistance = 6500.0f;
         }
-    }
-
-    private static void SyncTerrainOpenRealmLight(Node root, UeStyleLitSettings s)
-    {
-        var world = root.GetNodeOrNull<W3MapWorld>("W3MapWorld");
-        if (world?.Terrain == null)
-            return;
-        DirectionalLight3D? sun = FindActiveSun(root);
-        Vector3 lightDir = sun != null ? -sun.GlobalTransform.Basis.Z : new Vector3(0.45f, 0.85f, 0.28f);
-        float ambient = Mathf.Clamp(0.48f + s.ambient_from_sky * 0.22f, 0.45f, 0.85f);
-        float scale = 1.4f;
-        if (sun != null)
-        {
-            float e = Mathf.Clamp(sun.LightEnergy, 0.35f, 2.5f);
-            _ = e; // 颜色调制暂不接入 shader（当前 ApplyLighting 仅接受方向/环境/缩放三个参数）。
-            scale = 1.25f;
-        }
-        world.Terrain.ApplyLighting(lightDir, ambient, scale);
-        world.Cliffs?.ApplyLighting(lightDir, ambient, scale);
-    }
-
-    private static DirectionalLight3D? FindActiveSun(Node root)
-    {
-        Node? sky3d = root.GetNodeOrNull(Sky3DNodeName);
-        if (sky3d != null)
-        {
-            var sl = sky3d.GetNodeOrNull<DirectionalLight3D>("SunLight");
-            if (sl != null && sl.Visible)
-                return sl;
-        }
-        var sun = root.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
-        if (sun != null && sun.Visible)
-            return sun;
-        return root.GetNodeOrNull<DirectionalLight3D>("Sun");
     }
 
     private static void EnsureEnvironmentPhysical(Node root, UeStyleLitSettings s)
@@ -297,6 +246,7 @@ public partial class UeStyleLightingController : RefCounted
         env.FogSunScatter = fogOn ? 0.18f : 0.0f;
         env.FogDensity = 0.00005f;
 
+        we.CameraAttributes = null;
         we.Environment = env;
     }
 

@@ -640,48 +640,20 @@ public partial class W3MdxBatcher : Node3D
             if (hdLayers.Count > 0 && GI(hdLayers[0].AsGodotObject(), "shader") == 1)
                 return MakeHdMaterial(model, hdLayers[0].AsGodotObject(), replaceableTex);
         }
-        var mat = new StandardMaterial3D
-        {
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-        };
-        StyleModelMaterial(mat);
         string texPath = ResolveTex(model, g, replaceableTex);
-        int layerFm = 0;
+        GodotObject? layer = null;
         if (materials.Count > 0)
         {
             int mid = Mathf.Clamp(GI(g, "material_id"), 0, materials.Count - 1);
             GArray layers = materials[mid].AsGodotArray();
-            if (layers.Count > 0)
-                layerFm = GI(layers[0].AsGodotObject(), "filter_mode");
+            if (layers.Count > 0) layer = layers[0].AsGodotObject();
         }
-        string pathL = texPath.ToLowerInvariant();
-        bool looksCutout = pathL.Contains("tree") || pathL.Contains("leaf") || pathL.Contains("canopy") || pathL.Contains("plant");
-        bool looksAdd = pathL.Contains("glow") || pathL.Contains("fire") || pathL.Contains("torch") || pathL.Contains("lensflare");
-        if (!string.IsNullOrEmpty(texPath) && textures != null)
-        {
-            mat.AlbedoTexture = textures.Call("get_texture", texPath).As<Texture2D>();
-            if (layerFm == 1 || looksCutout)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-                mat.AlphaScissorThreshold = 0.28f;
-            }
-            else if (layerFm == 2)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-            }
-            else if (layerFm == 3 || layerFm == 4 || looksAdd)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-                mat.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
-                mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            }
-        }
-        else
-        {
-            mat.AlbedoColor = new Color(0.45f, 0.55f, 0.35f);
-        }
-        return mat;
+        Texture2D? texture = !string.IsNullOrEmpty(texPath) && textures != null
+            ? textures.Call("get_texture", texPath).As<Texture2D>() : null;
+        return W3ModelMaterials.CreateClassic(texture, texPath,
+            layer != null ? GI(layer, "filter_mode") : 0,
+            layer != null ? GI(layer, "flags") : 0,
+            layer != null ? GF(layer, "alpha") : 1f);
     }
 
     private ShaderMaterial MakeHdMaterial(GodotObject model, GodotObject layer, string replaceableTex)
@@ -788,16 +760,6 @@ public partial class W3MdxBatcher : Node3D
             return rt;
         }
         return ReplaceableStems.TryGetValue(rid, out string stem) ? stem + ".blp" : "";
-    }
-
-    private static void StyleModelMaterial(StandardMaterial3D mat)
-    {
-        if (mat == null)
-            return;
-        mat.Metallic = 0f;
-        mat.Roughness = 0.82f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.SchlickGgx;
-        mat.MetallicSpecular = 0.24f;
     }
 
     private void UpdateFrustumVisibility()

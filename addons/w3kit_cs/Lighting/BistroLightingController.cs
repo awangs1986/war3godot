@@ -1,5 +1,4 @@
 using Godot;
-using Diablo1Like.W3.World;
 
 namespace Diablo1Like.W3.Lighting;
 
@@ -23,10 +22,6 @@ public partial class BistroLightingController : RefCounted
         EnsureEnvironment(root, s, p);
         EnsureKeyLight(root, p);
         EnsureFillLight(root, p);
-        SyncTerrain(root, p);
-        // 道具/单位 + 地面：保留 War3 烘焙观感，只取用方向光 + 天空。
-        W3LightingController.SetModelsReceiveLights(root, true);
-        W3LightingController.SetTerrainReceiveLights(root, true);
     }
 
     public static void apply_to_scene(Node root, Resource? settings = null) => ApplyToScene(root, settings);
@@ -180,15 +175,4 @@ public partial class BistroLightingController : RefCounted
         fill.Visible = fill.LightEnergy > 0.02f;
     }
 
-    private static void SyncTerrain(Node root, BistroLitSettings.ScenarioParams p)
-    {
-        var world = root.GetNodeOrNull<W3MapWorld>("W3MapWorld");
-        if (world?.Terrain == null)
-            return;
-        var sun = root.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D");
-        Vector3 lightDir = sun != null ? -sun.GlobalTransform.Basis.Z : new Vector3(0.45f, 0.85f, 0.28f);
-        float ambient = Mathf.Clamp(0.4f + p.Ambient * 0.25f, 0.4f, 0.8f);
-        world.Terrain.ApplyLighting(lightDir, ambient, 1.3f);
-        world.Cliffs?.ApplyLighting(lightDir, ambient, 1.3f);
-    }
 }

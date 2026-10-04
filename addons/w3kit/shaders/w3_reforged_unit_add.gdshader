@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_disabled, blend_add, depth_draw_never, diffuse_burley, specular_schlick_ggx;
+render_mode cull_disabled, blend_add, depth_draw_never, unshaded;
 
 uniform sampler2D diffuse_map : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_map : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -19,9 +19,7 @@ void fragment() {
 	if (orm.a > 0.1) {
 		diffuse_texel.rgb *= team_color * orm.a;
 	}
-	ALBEDO = diffuse_texel.rgb;
-	ROUGHNESS = clamp(orm.g, 0.04, 1.0);
-	METALLIC = clamp(orm.b, 0.0, 1.0);
-	EMISSION = texture(emissive_map, UV).rgb * emissive_gain + diffuse_texel.rgb;
+	// Unshaded blend-add consumes ALBEDO directly (including Compatibility).
+	ALBEDO = diffuse_texel.rgb + texture(emissive_map, UV).rgb * emissive_gain;
 	ALPHA = diffuse_texel.a * layer_alpha;
 }

@@ -1,19 +1,14 @@
 using Godot;
-using Diablo1Like.W3.Terrain;
-using Diablo1Like.W3.World;
 
 namespace Diablo1Like.W3.Lighting;
 
 /// <summary>
 /// 通过 Godot DirectionalLight3D + WorldEnvironment 应用 <see cref="W3LitSettings"/>（War3 风格）。
-/// 迁移自 addons/w3kit/w3_war3_lit.gd；静态工具类，供 GDScript 通过脚本引用直接调用静态方法。
+/// War3 is a lighting preset only. Materials retain their authored PBR/unshaded response.
 /// </summary>
 [GlobalClass]
 public partial class W3LightingController : RefCounted
 {
-    // true 时（UE/Bistro）MDX 用 PER_PIXEL 并接收方向光/点光；War3 时保持 UNSHADED（BLP 贴图已预烘焙光照）。
-    public static bool ModelsReceiveLights;
-
     public static void ApplyToScene(Node root, Resource? settings = null)
     {
         if (root == null)
@@ -25,54 +20,9 @@ public partial class W3LightingController : RefCounted
         EnsureEnvironment(root, s);
         EnsureKeyLight(root, s);
         EnsureFillLight(root, s);
-        SyncTerrainOpenRealmLight(root, s);
-        SetModelsReceiveLights(root, false);
-        SetTerrainReceiveLights(root, false);
     }
 
     public static void apply_to_scene(Node root, Resource? settings = null) => ApplyToScene(root, settings);
-
-    /// <summary>切换 MDX 材质是否接收场景灯光（UE/Bistro=on，War3 烘焙=off）。</summary>
-    public static void SetModelsReceiveLights(Node root, bool on)
-    {
-        ModelsReceiveLights = on;
-        if (root == null)
-            return;
-        var world = root.GetNodeOrNull<W3MapWorld>("W3MapWorld");
-        if (world == null)
-            return;
-        var seen = new Godot.Collections.Dictionary<StandardMaterial3D, bool>();
-        int count = 0;
-        foreach (Node node in world.FindChildren("*", "GeometryInstance3D", true, false))
-        {
-            if (node is not GeometryInstance3D geo || geo.MaterialOverride is not StandardMaterial3D mat)
-                continue;
-            if (seen.ContainsKey(mat))
-                continue;
-            seen[mat] = true;
-            // 加色发光/火焰保持 unshaded。
-            if (mat.BlendMode == BaseMaterial3D.BlendModeEnum.Add)
-                continue;
-            StyleModelMaterial(mat);
-            count++;
-        }
-        GD.Print(on
-            ? $"W3LightingController: models receive scene lights (unique mats={count})"
-            : $"W3LightingController: models unshaded / baked albedo (unique mats={count})");
-    }
-
-    public static void set_models_receive_lights(Node root, bool on) => SetModelsReceiveLights(root, on);
-
-    /// <summary>
-    /// 地形材质是否接收场景灯光（与 GPU/C# 地形 renderer 约定）。
-    /// 旧 GDS 回退 (w3_gpu_terrain.gd) 的同名方法本就是空实现；
-    /// WarsmashGroundRenderer.cs（现行 C# 渲染器）没有对应开关，此处保留调用点但暂为空操作。
-    /// </summary>
-    public static void SetTerrainReceiveLights(Node root, bool on)
-    {
-    }
-
-    public static void _set_terrain_receive_lights(Node root, bool on) => SetTerrainReceiveLights(root, on);
 
     private static string WeatherOf(W3LitSettings s) => string.IsNullOrEmpty(s.weather) ? "default" : s.weather;
 
@@ -105,73 +55,6 @@ public partial class W3LightingController : RefCounted
                 return s;
         }
     }
-
-    /// <summary>把 open-realm Lambert 参数推给 GPU 地形/悬崖（自定义无光照 shader）。</summary>
-    private static void SyncTerrainOpenRealmLight(Node root, W3LitSettings s)
-    {
-        var world = root.GetNodeOrNull<W3MapWorld>("W3MapWorld");
-        if (world?.Terrain == null)
-            return;
-        DirectionalLight3D? sun = root.GetNodeOrNull<DirectionalLight3D>("DirectionalLight3D") ?? root.GetNodeOrNull<DirectionalLight3D>("Sun");
-        Vector3 lightDir = sun != null ? -sun.GlobalTransform.Basis.Z : new Vector3(0.45f, 0.85f, 0.28f);
-        // open-realm MDX 默认: ambient 0.35, 方向光缩放已烘进公式。
-        float ambient = Mathf.Clamp(0.25f + s.ambient_intensity * 0.15f, 0.2f, 0.5f);
-        world.Terrain.ApplyLighting(lightDir, ambient, 1.1f);
-        world.Cliffs?.ApplyLighting(lightDir, ambient, 1.1f);
-    }
-
-    public static void StyleTerrainMaterial(StandardMaterial3D? mat)
-    {
-        if (mat == null)
-            return;
-        mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel;
-        mat.Metallic = 0.0f;
-        mat.Roughness = 0.92f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.SchlickGgx;
-        mat.MetallicSpecular = 0.18f;
-    }
-
-    public static void style_terrain_material(StandardMaterial3D? mat) => StyleTerrainMaterial(mat);
-
-    public static void StyleModelMaterial(StandardMaterial3D? mat)
-    {
-        if (mat == null)
-            return;
-        mat.Metallic = 0.0f;
-        mat.Roughness = 0.82f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.SchlickGgx;
-        mat.MetallicSpecular = 0.24f;
-    }
-
-    public static void style_model_material(StandardMaterial3D? mat) => StyleModelMaterial(mat);
-
-    /// <summary>现代水面观感——不使用 War3 Water*.blp。几何体仍来自 W3E 高度。</summary>
-    public static void StyleModernWaterMaterial(StandardMaterial3D? mat)
-    {
-        if (mat == null)
-            return;
-        mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel;
-        mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-        mat.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-        mat.AlbedoColor = new Color(0.12f, 0.40f, 0.52f, 0.78f);
-        mat.AlbedoTexture = null;
-        mat.Metallic = 0.12f;
-        mat.Roughness = 0.08f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.SchlickGgx;
-        mat.EmissionEnabled = true;
-        mat.Emission = new Color(0.05f, 0.14f, 0.18f);
-        mat.EmissionEnergyMultiplier = 0.35f;
-        mat.RefractionEnabled = false;
-        mat.ProximityFadeEnabled = true;
-        mat.ProximityFadeDistance = 12.0f;
-        mat.RimEnabled = true;
-        mat.Rim = 0.4f;
-        mat.RimTint = 0.55f;
-        mat.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Always;
-        mat.RenderPriority = 2;
-    }
-
-    public static void style_modern_water_material(StandardMaterial3D? mat) => StyleModernWaterMaterial(mat);
 
     private static void EnsureEnvironment(Node root, W3LitSettings s)
     {
@@ -307,6 +190,7 @@ public partial class W3LightingController : RefCounted
         env.AdjustmentBrightness = 1.0f;
         env.AdjustmentContrast = 1.04f;
         env.AdjustmentSaturation = s.saturation;
+        we.CameraAttributes = null;
         we.Environment = env;
         we.SetMeta("w3_tps_modern_lighting", modern);
     }

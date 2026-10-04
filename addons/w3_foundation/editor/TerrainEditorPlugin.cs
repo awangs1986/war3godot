@@ -1,3 +1,4 @@
+#if TOOLS
 using System;
 using Godot;
 using W3Foundation.Terrain.Data;
@@ -361,3 +362,4 @@ public partial class TerrainEditorPlugin : EditorPlugin
         SetActive(terrain);
     }
 }
+#endif

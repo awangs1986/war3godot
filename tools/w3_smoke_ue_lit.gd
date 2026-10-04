@@ -48,6 +48,21 @@ func _run() -> void:
 			push_error("expected PhysicalSkyMaterial")
 			ok = false
 
+	# Sky3D drives real scene lights. Terrain shaders need no private clock or
+	# per-frame Lambert uniform copy to follow these changes.
+	if sky3d != null:
+		sky3d.current_time = 0.0
+		await process_frame
+		var sun_light: DirectionalLight3D = sky3d.get_node("SunLight")
+		var midnight_direction := sun_light.global_basis.z
+		sky3d.current_time = 12.0
+		await process_frame
+		if midnight_direction.is_equal_approx(sun_light.global_basis.z):
+			push_error("Sky3D time did not change the scene sun direction")
+			ok = false
+		else:
+			print("SMOKE midnight/noon scene sun direction changes")
+
 	# Switch to War3 must tear down Sky3D.
 	preload("res://addons/w3kit_cs/Lighting/W3LightingController.cs").apply_to_scene(root, load("res://addons/w3kit/w3_lit_settings_preview.tres"))
 	await process_frame

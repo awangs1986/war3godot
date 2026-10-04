@@ -57,6 +57,26 @@ public sealed class W3TerrainMap
     public bool ContainsCorner(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
     public bool ContainsTile(int x, int y) => x >= 0 && y >= 0 && x < TileWidth && y < TileHeight;
 
+    /// <summary>Copies authored data only. Derived render flags belong to a build.</summary>
+    public W3TerrainMap CreateSnapshot()
+    {
+        var copy = new W3TerrainMap
+        {
+            Version = Version, Tileset = Tileset, CustomTileset = CustomTileset,
+            Width = Width, Height = Height, CenterOffsetX = CenterOffsetX, CenterOffsetY = CenterOffsetY,
+            Corners = Corners.Select(c => new Corner
+            {
+                GroundHeight = c.GroundHeight, WaterHeight = c.WaterHeight,
+                MapEdge = c.MapEdge, Ramp = c.Ramp, Blight = c.Blight, Water = c.Water, Boundary = c.Boundary,
+                GroundTexture = c.GroundTexture, GroundVariation = c.GroundVariation,
+                CliffTexture = c.CliffTexture, CliffVariation = c.CliffVariation, LayerHeight = c.LayerHeight,
+            }).ToArray(),
+        };
+        copy.GroundTilesets.AddRange(GroundTilesets);
+        copy.CliffTilesets.AddRange(CliffTilesets);
+        return copy;
+    }
+
     public static W3TerrainMap LoadFile(string path) => Parse(File.ReadAllBytes(path));
 
     public static W3TerrainMap Parse(ReadOnlySpan<byte> bytes)

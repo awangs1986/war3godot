@@ -1,7 +1,8 @@
 namespace Diablo1Like.W3.Terrain;
 
 /// <summary>
-/// 在 W3TerrainMap 上做双线性高度采样与可走性辅助（无引擎依赖）。
+/// Heightfield queries using the rendered ground topology, plus walkability helpers.
+/// Cliff model interiors are not represented by this heightfield query.
 /// </summary>
 public sealed class W3HeightSampler
 {
@@ -16,7 +17,7 @@ public sealed class W3HeightSampler
     /// <summary>当前绑定的地形图。</summary>
     public W3TerrainMap Map => _map;
 
-    /// <summary>世界 XZ 处的地面高度（含坡道入口半格抬升）。</summary>
+    /// <summary>Triangulated heightfield Y (including ramp lift), not a cliff-mesh raycast.</summary>
     public float SampleY(float worldX, float worldZ)
     {
         float lx = (worldX - _map.CenterOffsetX) / W3TerrainMap.TileSize;
@@ -29,9 +30,7 @@ public sealed class W3HeightSampler
         float h10 = CornerWorldY(x0 + 1, y0);
         float h01 = CornerWorldY(x0, y0 + 1);
         float h11 = CornerWorldY(x0 + 1, y0 + 1);
-        float h0 = Lerp(h00, h10, tx);
-        float h1 = Lerp(h01, h11, tx);
-        return Lerp(h0, h1, ty);
+        return TerrainSurfaceGeometry.GroundHeight(h00, h10, h01, h11, tx, ty);
     }
 
     /// <summary>世界坐标 → 瓦片索引（向下取整）。</summary>
@@ -95,5 +94,4 @@ public sealed class W3HeightSampler
         return _map.FinalGroundHeightWithRamp(cx, cy) * W3TerrainMap.TileSize;
     }
 
-    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
 }

@@ -24,4 +24,13 @@ void fragment() {
 	METALLIC = clamp(orm.b, 0.0, 1.0);
 	EMISSION = texture(emissive_map, UV).rgb * emissive_gain;
 	ALPHA = diffuse_texel.a * layer_alpha;
+	if (unshaded_layer) {
+		// Authored unshaded layers emit their color without reflected light.
+		EMISSION += ALBEDO;
+		ALBEDO = vec3(0.0);
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+		ROUGHNESS = 1.0;
+		AO = 1.0;
+	}
 }

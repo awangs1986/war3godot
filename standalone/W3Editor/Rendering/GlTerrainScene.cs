@@ -38,11 +38,13 @@ public sealed class GlTerrainScene : IDisposable
     private readonly List<CliffBatchGpu> _cliffGpu = new();
     private readonly Dictionary<int, uint> _cliffTextureCache = new();
     private readonly Dictionary<string, MdxStaticModel?> _modelCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, MdxStaticModel> _preparedCliffModels = new(StringComparer.OrdinalIgnoreCase);
 
     // CPU state (valid off the GL thread for picking).
     private W3EMap? _source;
     private W3TerrainMap? _map;
-    private WarsmashTerrainRules? _rules;
+    private W3TerrainMap? _authoredMap;
+    private TerrainBuild? _terrainBuild;
     private GroundLayout? _layout;
     private WaterLayout? _waterLayout;
     private EditorAssets? _assets;
@@ -50,7 +52,6 @@ public sealed class GlTerrainScene : IDisposable
     private int _waterFrames;
     private float[] _heights = Array.Empty<float>();
     private readonly List<bool> _extended = new();
-    private List<int> _cliffToGround = new();
     private readonly object _sync = new();
 
     private bool _rebuildAll;      // tileset/map identity changed → rebuild everything
@@ -91,10 +92,10 @@ public sealed class GlTerrainScene : IDisposable
         {
             _source = source;
             _assets = assets;
-            _map = TerrainMirror.Create(source);
+            _authoredMap = TerrainMirror.Create(source);
             RebuildCpu();
             Camera.Frame(
-                _map.CenterOffsetX + _map.TileWidth * W3TerrainMap.TileSize * 0.5f,
+                _map!.CenterOffsetX + _map.TileWidth * W3TerrainMap.TileSize * 0.5f,
                 _map.CenterOffsetY + _map.TileHeight * W3TerrainMap.TileSize * 0.5f,
                 Math.Max(_map.TileWidth, _map.TileHeight) * W3TerrainMap.TileSize * 0.7f);
             _rebuildAll = true;
@@ -107,7 +108,9 @@ public sealed class GlTerrainScene : IDisposable
         {
             _source = null;
             _map = null;
-            _rules = null;
+            _authoredMap = null;
+            _terrainBuild = null;
+            _preparedCliffModels.Clear();
             _layout = null;
             _waterLayout = null;
             _heights = Array.Empty<float>();
@@ -213,9 +216,9 @@ public sealed class GlTerrainScene : IDisposable
     {
         lock (_sync)
         {
-            if (_source == null || _map == null)
+            if (_source == null || _authoredMap == null)
                 return;
-            TerrainMirror.SyncRegion(_source, _map, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
+            TerrainMirror.SyncRegion(_source, _authoredMap, x0 - 4, y0 - 4, x1 + 4, y1 + 4);
             RebuildCpu();
             Placements.MarkDirty(); // ground-snap heights may have changed
             _rebuildDynamic = true;
@@ -229,7 +232,7 @@ public sealed class GlTerrainScene : IDisposable
         {
             if (_source == null)
                 return;
-            _map = TerrainMirror.Create(_source);
+            _authoredMap = TerrainMirror.Create(_source);
             RebuildCpu();
             Placements.MarkDirty();
             _rebuildAll = true;
@@ -238,22 +241,19 @@ public sealed class GlTerrainScene : IDisposable
 
     private void RebuildCpu()
     {
-        if (_map == null || _assets == null)
+        if (_authoredMap == null || _assets == null)
             return;
-        _cliffToGround = _assets.BuildCliffToGround(_map);
-        _rules = new WarsmashTerrainRules(
-            _map,
-            rel => _assets.ResolveModel(rel) != null,
-            texture => _assets.CliffTypeFor(_map, texture).CliffModelDir,
-            texture => _assets.CliffTypeFor(_map, texture).RampModelDir,
-            (tag, authored) => Math.Clamp(authored, 0, WarsmashTerrainRules.CliffVariationMaximum.GetValueOrDefault(tag, 0)));
-        _cliffPlacements = _rules.RebuildCliffs(); // also refreshes Cliff/Romp corner flags
+        _preparedCliffModels.Clear();
+        _terrainBuild = TerrainBuild.Create(_authoredMap, CanLoadCliffModel,
+            texture => _assets.CliffTypeFor(_authoredMap, texture));
+        _map = _terrainBuild.Map;
+        _cliffPlacements = _terrainBuild.Cliffs;
         // _extended is only known after atlases decode; keep previous values and
         // let the full rebuild path refresh it.
         int layerCount = _map.GroundTilesets.Count + 1;
         while (_extended.Count < layerCount)
             _extended.Add(false);
-        _layout = new GroundLayout(_map, _rules, _extended, _cliffToGround, layerCount);
+        _layout = _terrainBuild.CreateGroundLayout(_extended);
         _waterLayout = new WaterLayout(_map);
         _heights = _layout.BuildHeightMap();
     }
@@ -261,20 +261,20 @@ public sealed class GlTerrainScene : IDisposable
     private IReadOnlyList<WarsmashTerrainRules.CliffPlacement> _cliffPlacements =
         Array.Empty<WarsmashTerrainRules.CliffPlacement>();
 
-    /// <summary>Bilinear ground height (world Y) at map-corner coordinates.</summary>
+    /// <summary>Triangulated heightfield Y; cliff interiors require a separate mesh query.</summary>
     public float SampleHeight(float cornerX, float cornerY)
     {
         if (_map == null || _heights.Length == 0)
             return 0f;
-        float fx = Math.Clamp(cornerX, 0f, _map.Width - 1.001f);
-        float fy = Math.Clamp(cornerY, 0f, _map.Height - 1.001f);
-        int x0 = (int)fx, y0 = (int)fy;
+        float fx = Math.Clamp(cornerX, 0f, _map.Width - 1f);
+        float fy = Math.Clamp(cornerY, 0f, _map.Height - 1f);
+        int x0 = Math.Min((int)fx, _map.Width - 2), y0 = Math.Min((int)fy, _map.Height - 2);
         float tx = fx - x0, ty = fy - y0;
         float h00 = _heights[y0 * _map.Width + x0];
         float h10 = _heights[y0 * _map.Width + Math.Min(x0 + 1, _map.Width - 1)];
         float h01 = _heights[Math.Min(y0 + 1, _map.Height - 1) * _map.Width + x0];
         float h11 = _heights[Math.Min(y0 + 1, _map.Height - 1) * _map.Width + Math.Min(x0 + 1, _map.Width - 1)];
-        return (h00 + (h10 - h00) * tx) * (1 - ty) + (h01 + (h11 - h01) * tx) * ty;
+        return TerrainSurfaceGeometry.GroundHeight(h00, h10, h01, h11, tx, ty);
     }
 
     /// <summary>
@@ -405,10 +405,12 @@ public sealed class GlTerrainScene : IDisposable
 
             ClampCameraAboveGround();
             Matrix4x4 vp = Camera.ViewProjection(width / (float)Math.Max(height, 1));
-            DrawGround(vp);
-            if (ShowCliffs) DrawCliffs(vp);
+            // All solid passes use min(1, mix(ambient, 1, NdotL) * scale).
+            // Unlit therefore needs (1, 1); a zero scale makes models black.
             float ambient = LightingEnabled ? LightAmbient : 1f;
-            float scale = LightingEnabled ? LightScale : 0f;
+            float scale = LightingEnabled ? LightScale : 1f;
+            DrawGround(vp, ambient, scale);
+            if (ShowCliffs) DrawCliffs(vp, ambient, scale);
             Placements.Render(vp, LightDirection, ambient, scale, Compile);
             PluginPreview.Render(vp, LightDirection, ambient, scale, Compile);
             if (ShowWater) DrawWater(vp, timeSeconds);
@@ -527,7 +529,7 @@ public sealed class GlTerrainScene : IDisposable
                 cells.Add(GroundLayout.SliceCell(atlas.Pixels, atlas.Width, atlas.Height, sub, extended));
         }
         // _extended feeds GetVariation → tile data must be rebuilt with it.
-        _layout = new GroundLayout(_map, _rules!, _extended, _cliffToGround, layerIds.Count);
+        _layout = _terrainBuild!.CreateGroundLayout(_extended);
 
         int cell = GroundLayout.CellSize;
         for (int bank = 0; bank < ArrayBankCount; bank++)
@@ -613,7 +615,7 @@ public sealed class GlTerrainScene : IDisposable
         UploadR8(ref _waterExistsTex, _map.TileWidth, _map.TileHeight, wet);
 
         RebuildCliffBatches();
-        StatusLine = $"GL: {_map.TileWidth}x{_map.TileHeight} 瓦片, 悬崖 {_cliffPlacements.Count} 块, 水帧 {_waterFrames}";
+        StatusLine = $"GL: {_map.TileWidth}x{_map.TileHeight} 瓦片, 悬崖 {_cliffPlacements.Count} 块 (缺模型 {_terrainBuild?.MissingModels.Count ?? 0}), 水帧 {_waterFrames}";
     }
 
     private void UploadR32F(ref uint texture, int width, int height, float[] data)
@@ -678,16 +680,8 @@ public sealed class GlTerrainScene : IDisposable
         var builders = new Dictionary<int, (List<float> Vertices, List<uint> Indices)>();
         foreach (WarsmashTerrainRules.CliffPlacement placement in _cliffPlacements)
         {
-            string? modelPath = _assets.ResolveModel(placement.ModelPath);
-            if (modelPath == null)
-                continue;
-            if (!_modelCache.TryGetValue(modelPath, out MdxStaticModel? model))
-            {
-                model = MdxStaticModel.LoadFile(modelPath);
-                _modelCache[modelPath] = model;
-            }
-            if (model == null)
-                continue;
+            if (!_preparedCliffModels.TryGetValue(placement.ModelPath, out MdxStaticModel? model))
+                throw new InvalidOperationException($"Terrain build lost its decoded model: {placement.ModelPath}");
             if (!builders.TryGetValue(placement.CliffTexture, out var builder))
             {
                 builder = (new List<float>(), new List<uint>());
@@ -729,22 +723,12 @@ public sealed class GlTerrainScene : IDisposable
     }
 
     /// <summary>
-    /// Transforms one cliff model instance to world space. Mirrors
-    /// w3_mdx_instance.gd: Godot vertex = (w3.y, w3.z, -w3.x) (cliff remap),
-    /// then Y += bilinear(3x3 GroundHeight grid) * 128, then placement offset
-    /// at (BaseLayer - 2) * 128.
+    /// Adapts MDX coordinates to the shared cliff deformation, then adds the
+    /// placement origin and base layer. Godot consumes the same deformation.
     /// </summary>
     private void AppendCliffInstance(
         List<float> vertices, List<uint> indices, MdxStaticModel model, WarsmashTerrainRules.CliffPlacement placement)
     {
-        Span<float> grid = stackalloc float[9];
-        for (int gy = 0; gy < 3; gy++)
-        for (int gx = 0; gx < 3; gx++)
-        {
-            int cx = Math.Clamp(placement.X + gx, 0, _map!.Width - 1);
-            int cy = Math.Clamp(placement.Y + gy, 0, _map.Height - 1);
-            grid[gy * 3 + gx] = _map.GetCorner(cx, cy).GroundHeight;
-        }
         float baseX = _map!.CenterOffsetX + placement.X * W3TerrainMap.TileSize;
         float baseY = (placement.BaseLayer - 2f) * W3TerrainMap.TileSize;
         float baseZ = _map.CenterOffsetY + placement.Y * W3TerrainMap.TileSize;
@@ -761,16 +745,17 @@ public sealed class GlTerrainScene : IDisposable
                 float gx = wy;           // Godot X
                 float gyv = wz;          // Godot Y
                 float gz = -wx;          // Godot Z
-                gyv += SampleGrid(grid, gx / 128f, gz / 128f) * 128f;
-                float nx = geoset.Normals[i * 3 + 1];
-                float ny = geoset.Normals[i * 3 + 2];
-                float nz = -geoset.Normals[i * 3];
+                var surface = TerrainSurfaceGeometry.DeformCliffVertex(_map, placement.X, placement.Y,
+                    new Vector3(gx, gyv, gz),
+                    new Vector3(geoset.Normals[i * 3 + 1], geoset.Normals[i * 3 + 2], -geoset.Normals[i * 3]));
+                gyv = surface.Position.Y;
+                Vector3 normal = surface.Normal;
                 vertices.Add(baseX + gx);
                 vertices.Add(baseY + gyv);
                 vertices.Add(baseZ + gz);
-                vertices.Add(nx);
-                vertices.Add(ny);
-                vertices.Add(nz);
+                vertices.Add(normal.X);
+                vertices.Add(normal.Y);
+                vertices.Add(normal.Z);
                 vertices.Add(i * 2 < geoset.Uvs.Count ? geoset.Uvs[i * 2] : 0f);
                 vertices.Add(i * 2 + 1 < geoset.Uvs.Count ? geoset.Uvs[i * 2 + 1] : 0f);
             }
@@ -779,17 +764,19 @@ public sealed class GlTerrainScene : IDisposable
         }
     }
 
-    private static float SampleGrid(Span<float> grid, float u, float v)
+    private bool CanLoadCliffModel(string relativePath)
     {
-        float gx = Math.Clamp(u, 0f, 2f);
-        float gz = Math.Clamp(v, 0f, 2f);
-        int x0 = Math.Min((int)gx, 1);
-        int z0 = Math.Min((int)gz, 1);
-        float tx = gx - x0;
-        float tz = gz - z0;
-        float g0 = grid[z0 * 3 + x0] + (grid[z0 * 3 + x0 + 1] - grid[z0 * 3 + x0]) * tx;
-        float g1 = grid[(z0 + 1) * 3 + x0] + (grid[(z0 + 1) * 3 + x0 + 1] - grid[(z0 + 1) * 3 + x0]) * tx;
-        return g0 + (g1 - g0) * tz;
+        string? path = _assets!.ResolveModel(relativePath);
+        if (path == null) return false;
+        if (!_modelCache.TryGetValue(path, out MdxStaticModel? model))
+        {
+            model = MdxStaticModel.LoadFile(path);
+            _modelCache[path] = model;
+        }
+        if (model == null || !model.Geosets.Any(g => g.Positions.Count >= 9 && g.Faces.Count >= 3))
+            return false;
+        _preparedCliffModels[relativePath] = model;
+        return true;
     }
 
     private uint GetCliffTexture(int textureIndex)
@@ -815,7 +802,7 @@ public sealed class GlTerrainScene : IDisposable
     // Draw passes
     // ------------------------------------------------------------------
 
-    private void DrawGround(Matrix4x4 vp)
+    private void DrawGround(Matrix4x4 vp, float ambient, float lightScale)
     {
         GL gl = _gl!;
         gl.UseProgram(_groundProgram);
@@ -825,8 +812,8 @@ public sealed class GlTerrainScene : IDisposable
         SetFloat(_groundProgram, "u_tile_size", W3TerrainMap.TileSize);
         SetVec2(_groundProgram, "u_origin", _map.CenterOffsetX, _map.CenterOffsetY);
         SetVec3(_groundProgram, "u_light_dir", LightDirection);
-        SetFloat(_groundProgram, "u_ambient", LightAmbient);
-        SetFloat(_groundProgram, "u_light_scale", LightScale);
+        SetFloat(_groundProgram, "u_ambient", ambient);
+        SetFloat(_groundProgram, "u_light_scale", lightScale);
         SetFloat(_groundProgram, "u_grid", ShowGrid ? 1f : 0f);
         SetVec3(_groundProgram, "u_cam_target", Camera.Target);
         BindTexture(gl, _groundProgram, 0, "u_height", TextureTarget.Texture2D, _heightTex);
@@ -841,7 +828,7 @@ public sealed class GlTerrainScene : IDisposable
         gl.BindVertexArray(0);
     }
 
-    private void DrawCliffs(Matrix4x4 vp)
+    private void DrawCliffs(Matrix4x4 vp, float ambient, float lightScale)
     {
         if (_cliffGpu.Count == 0)
             return;
@@ -849,8 +836,8 @@ public sealed class GlTerrainScene : IDisposable
         gl.UseProgram(_cliffProgram);
         SetMatrix(_cliffProgram, "u_vp", vp);
         SetVec3(_cliffProgram, "u_light_dir", LightDirection);
-        SetFloat(_cliffProgram, "u_ambient", LightAmbient);
-        SetFloat(_cliffProgram, "u_light_scale", LightScale);
+        SetFloat(_cliffProgram, "u_ambient", ambient);
+        SetFloat(_cliffProgram, "u_light_scale", lightScale);
         foreach (CliffBatchGpu batch in _cliffGpu)
         {
             BindTexture(gl, _cliffProgram, 0, "u_texture", TextureTarget.Texture2D, batch.Texture);
@@ -990,11 +977,13 @@ public sealed class GlTerrainScene : IDisposable
     private void BuildQuad()
     {
         GL gl = _gl!;
-        float[] quad =
+        ReadOnlySpan<Vector2> corners = TerrainSurfaceGeometry.GroundTriangleCorners;
+        float[] quad = new float[corners.Length * 2];
+        for (int i = 0; i < corners.Length; i++)
         {
-            0f, 0f,  1f, 0f,  0f, 1f,
-            1f, 0f,  1f, 1f,  0f, 1f,
-        };
+            quad[i * 2] = corners[i].X;
+            quad[i * 2 + 1] = corners[i].Y;
+        }
         _quadVbo = gl.GenBuffer();
         gl.BindBuffer(BufferTargetARB.ArrayBuffer, _quadVbo);
         gl.BufferData(BufferTargetARB.ArrayBuffer, (ReadOnlySpan<float>)quad, BufferUsageARB.StaticDraw);

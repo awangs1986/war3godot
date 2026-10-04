@@ -145,10 +145,7 @@ public partial class W3MapWorld : Node3D
                     shdBytes = f.GetBuffer((long)f.GetLength());
             }
         }
-        Terrain!.Build(map, textures, shdBytes);
-        Cliffs!.SetPathResolver(archive);
-        Cliffs.Build(map, textures, shdBytes);
-        Water!.Build(map, textures);
+        BuildTerrainVisuals(map, textures, archive, shdBytes);
 
         if (preview_no_shadows)
             DisableSceneShadows();
@@ -194,10 +191,7 @@ public partial class W3MapWorld : Node3D
         pathfinder = new W3GridPathfinderBridge(sampler);
         pathing = null;
 
-        Terrain!.Build(map, textures, Array.Empty<byte>());
-        Cliffs!.SetPathResolver(archive);
-        Cliffs.Build(map, textures, Array.Empty<byte>());
-        Water!.Build(map, textures);
+        BuildTerrainVisuals(map, textures, archive, Array.Empty<byte>());
         if (preview_no_shadows)
             DisableSceneShadows();
 
@@ -241,10 +235,7 @@ public partial class W3MapWorld : Node3D
         pathfinder = new W3GridPathfinderBridge(sampler);
         LoadPathingGrid(level.Call("read_file", "war3map.wpm").AsByteArray(), "");
         byte[] shadowBytes = level.Get("shadow_bytes").AsByteArray();
-        Terrain!.Build(map, textures, shadowBytes);
-        Cliffs!.SetPathResolver(level);
-        Cliffs.Build(map, textures, shadowBytes);
-        Water!.Build(map, textures);
+        BuildTerrainVisuals(map, textures, level, shadowBytes);
         if (preview_no_shadows)
             DisableSceneShadows();
         if (!terrain_only)
@@ -303,6 +294,15 @@ public partial class W3MapWorld : Node3D
             GD.Print($"W3MapWorld: pathing grid {pathing.Get("width").AsInt32()}x{pathing.Get("height").AsInt32()}");
     }
 
+    private void BuildTerrainVisuals(GodotObject mapResource, GodotObject textureProvider,
+        GodotObject? resolver, byte[] shadows)
+    {
+        Cliffs!.SetPathResolver(resolver);
+        Cliffs.Build(mapResource, textureProvider, shadows);
+        Terrain!.BuildFrom(Cliffs.BuildResult!, textureProvider, shadows);
+        Water!.Build(mapResource, textureProvider);
+    }
+
     private void _reset_loaded_state()
     {
         archive = null;
@@ -332,7 +332,7 @@ public partial class W3MapWorld : Node3D
         samplerBridge.BindMap(map);
         sampler = samplerBridge;
         pathfinder = new W3GridPathfinderBridge(sampler);
-        Terrain!.Build(map, textures, Array.Empty<byte>());
+        BuildTerrainVisuals(map, textures, null, Array.Empty<byte>());
         _status = msg;
         GD.Print("W3MapWorld: ", _status);
         EmitSignal(SignalName.LoadFinished, true, _status);

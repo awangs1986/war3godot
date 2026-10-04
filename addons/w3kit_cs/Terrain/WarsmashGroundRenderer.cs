@@ -20,41 +20,36 @@ public partial class WarsmashGroundRenderer : Node3D
     private const int CellSize = GroundLayout.CellSize;
 
     private W3TerrainMap? _map;
-    private WarsmashTerrainRules? _rules;
+    private TerrainBuild? _build;
     private GroundLayout? _layout;
     private GodotObject? _textures;
     private ShaderMaterial? _material;
     private readonly List<bool> _extended = new();
-    private readonly List<int> _cliffToGround = new();
     private readonly List<string> _layerIds = new();
 
     public W3TerrainMap? TerrainMap => _map;
-    public WarsmashTerrainRules? Rules => _rules;
 
     public void Build(GodotObject mapResource, GodotObject textureProvider, byte[] shadowBytes)
     {
+        _textures = textureProvider;
+        W3TerrainMap map = W3TerrainMapBridge.FromGodotResource(mapResource);
+        var assets = new GodotTerrainAssets(map, ResolveModelPath);
+        BuildFrom(assets.Build(), textureProvider, shadowBytes);
+    }
+
+    /// <summary>Consumes the exact build already used to draw cliffs.</summary>
+    internal void BuildFrom(TerrainBuild build, GodotObject textureProvider, byte[] shadowBytes)
+    {
         ClearRenderer();
         _textures = textureProvider;
-        _map = W3TerrainMapBridge.FromGodotResource(mapResource);
-        // 与悬崖渲染器一致：只有可解析到的 CliffTrans 才挖洞，避免缺资源地图留洞
-        _rules = new WarsmashTerrainRules(
-            _map,
-            rel => !string.IsNullOrEmpty(ResolveModelPath(rel)),
-            cliffVariation: (tag, authored) =>
-            {
-                int maxVariation = WarsmashTerrainRules.CliffVariationMaximum.GetValueOrDefault(tag, 0);
-                if (maxVariation <= 0)
-                    return 0;
-                int v = authored % (maxVariation + 1);
-                return v < 0 ? v + maxVariation + 1 : v;
-            });
-        int cliffCount = _rules.RebuildCliffs().Count;
+        _map = build.Map;
+        _build = build;
+        int cliffCount = build.Cliffs.Count;
         _layerIds.AddRange(_map.GroundTilesets);
         _layerIds.Add("__BLIGHT__");
-        PrepareCliffGroundMapping();
 
         Texture2DArray[] arrays = BuildGroundArrays();
-        _layout = new GroundLayout(_map, _rules, _extended, _cliffToGround, _layerIds.Count);
+        _layout = build.CreateGroundLayout(_extended);
 
         ImageTexture heightTexture = BuildHeightTexture();
         ImageTexture normalHeightTexture = BuildNormalHeightTexture();
@@ -79,7 +74,6 @@ public partial class WarsmashGroundRenderer : Node3D
         _material.SetShaderParameter("tile_size", W3TerrainMap.TileSize);
         _material.SetShaderParameter("map_origin", new Vector2(_map.CenterOffsetX, _map.CenterOffsetY));
         _material.SetShaderParameter("map_size", new Vector2(_map.TileWidth * W3TerrainMap.TileSize, _map.TileHeight * W3TerrainMap.TileSize));
-        ApplyLighting(new Vector3(0.45f, 0.85f, 0.28f).Normalized(), 0.35f, 1.1f);
 
         var multiMesh = new MultiMesh
         {
@@ -139,25 +133,12 @@ public partial class WarsmashGroundRenderer : Node3D
     // migrated separately.
     public void build(GodotObject mapResource, GodotObject textureProvider, byte[] shadowBytes) => Build(mapResource, textureProvider, shadowBytes);
 
-    public void ApplyLighting(Vector3 direction, float ambient = 0.35f, float scale = 1.1f)
-    {
-        if (_material == null)
-            return;
-        if (direction.LengthSquared() < 0.0001f)
-            direction = new Vector3(0.45f, 0.85f, 0.28f);
-        _material.SetShaderParameter("light_dir", direction.Normalized());
-        _material.SetShaderParameter("light_ambient", ambient);
-        _material.SetShaderParameter("light_scale", scale);
-    }
-
-    public void apply_lighting(Vector3 direction, float ambient = 0.35f, float scale = 1.1f) => ApplyLighting(direction, ambient, scale);
-
     public void SetFlatInspect(bool enabled) => _material?.SetShaderParameter("flat_lighting", enabled);
     public void SetSoftTint(bool enabled) => _material?.SetShaderParameter("soft_tint", enabled);
     public void set_flat_inspect(bool enabled) => SetFlatInspect(enabled);
     public void set_soft_tint(bool enabled) => SetSoftTint(enabled);
 
-    public bool GroundExists(int x, int y) => _rules?.GroundExists(x, y) ?? false;
+    public bool GroundExists(int x, int y) => _build?.GroundExists(x, y) ?? false;
     public bool ground_exists(int x, int y) => GroundExists(x, y);
 
     private void ClearRenderer()
@@ -165,22 +146,11 @@ public partial class WarsmashGroundRenderer : Node3D
         foreach (Node child in GetChildren())
             child.QueueFree();
         _map = null;
-        _rules = null;
+        _build = null;
         _layout = null;
         _material = null;
         _extended.Clear();
-        _cliffToGround.Clear();
         _layerIds.Clear();
-    }
-
-    private void PrepareCliffGroundMapping()
-    {
-        foreach (string cliffId in _map!.CliffTilesets)
-        {
-            string groundId = _textures!.Call("get_cliff_ground_tile", cliffId).AsString();
-            int index = _map.GroundTilesets.IndexOf(groundId);
-            _cliffToGround.Add(index >= 0 ? index : 0);
-        }
     }
 
     private Texture2DArray[] BuildGroundArrays()
@@ -288,13 +258,9 @@ public partial class WarsmashGroundRenderer : Node3D
     {
         var surface = new SurfaceTool();
         surface.Begin(Mesh.PrimitiveType.Triangles);
-        Vector3[] vertices =
+        foreach (System.Numerics.Vector2 corner in TerrainSurfaceGeometry.GroundTriangleCorners)
         {
-            new(0,0,0), new(1,0,0), new(0,0,1),
-            new(1,0,0), new(1,0,1), new(0,0,1),
-        };
-        foreach (Vector3 vertex in vertices)
-        {
+            var vertex = new Vector3(corner.X, 0, corner.Y);
             surface.SetNormal(Vector3.Up);
             surface.SetUV(new Vector2(vertex.X, vertex.Z));
             surface.AddVertex(vertex);
@@ -327,18 +293,19 @@ public partial class WarsmashGroundRenderer : Node3D
     /// <summary>移植 GDS _build_height_collision：供射线/角色查询落地。</summary>
     private void BuildHeightCollision()
     {
-        if (_map == null || _rules == null)
+        if (_map == null || _build == null)
             return;
         int tilesX = _map.TileWidth;
         int tilesY = _map.TileHeight;
-        int step = tilesX * tilesY > 20000 ? 2 : 1;
+        // Collision uses the same tile topology and coverage as rendering.
+        const int step = 1;
         var st = new SurfaceTool();
         st.Begin(Mesh.PrimitiveType.Triangles);
         for (int y = 0; y < tilesY; y += step)
         {
             for (int x = 0; x < tilesX; x += step)
             {
-                if (!_rules.GroundExists(x, y))
+                if (!_build.GroundExists(x, y))
                     continue;
                 int x1 = Math.Min(x + step, tilesX);
                 int y1 = Math.Min(y + step, tilesY);
@@ -346,12 +313,12 @@ public partial class WarsmashGroundRenderer : Node3D
                 Vector3 p10 = CornerPos(x1, y);
                 Vector3 p01 = CornerPos(x, y1);
                 Vector3 p11 = CornerPos(x1, y1);
-                st.AddVertex(p00);
-                st.AddVertex(p10);
-                st.AddVertex(p01);
-                st.AddVertex(p10);
                 st.AddVertex(p11);
                 st.AddVertex(p01);
+                st.AddVertex(p00);
+                st.AddVertex(p00);
+                st.AddVertex(p10);
+                st.AddVertex(p11);
             }
         }
         ArrayMesh mesh = st.Commit();

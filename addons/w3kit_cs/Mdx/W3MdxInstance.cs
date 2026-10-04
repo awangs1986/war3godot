@@ -37,10 +37,9 @@ public partial class W3MdxInstance : Node3D
     public bool _anim_active = true;
     public int _skin_frame;
     public bool _cliff_remap;
-    public Vector4 _cliff_ground = Vector4.Zero;
-    public float[] _cliff_ground_grid = Array.Empty<float>();
-    public Vector2I _cliff_ground_grid_size = Vector2I.Zero;
-    public bool _cliff_displace;
+    // Optional per-instance geometry transform, after axis remapping. Transformed
+    // geometry must bypass the shared mesh cache. Terrain rules live in the caller.
+    internal Func<Vector3, Vector3, (Vector3 Position, Vector3 Normal)>? StaticVertexTransform;
     public string _replaceable_tex = "";
     public Node3D _mesh_root;
     public MeshInstance3D _placeholder;
@@ -93,10 +92,6 @@ public partial class W3MdxInstance : Node3D
         _animate = _playback && model != null && GA(model, "bones").Count > 0;
         _proximity_gate = OB(opts, "proximity_gate") && _playback;
         _cliff_remap = OB(opts, "cliff_remap");
-        _cliff_displace = opts.ContainsKey("cliff_ground") || opts.ContainsKey("cliff_ground_grid");
-        _cliff_ground = opts.ContainsKey("cliff_ground") ? opts["cliff_ground"].AsVector4() : Vector4.Zero;
-        _cliff_ground_grid = opts.ContainsKey("cliff_ground_grid") ? opts["cliff_ground_grid"].AsFloat32Array() : Array.Empty<float>();
-        _cliff_ground_grid_size = opts.ContainsKey("cliff_ground_grid_size") ? opts["cliff_ground_grid_size"].AsVector2I() : Vector2I.Zero;
         _replaceable_tex = OStr(opts, "replaceable_texture");
         _geoset_nodes.Clear();
         _bind_geosets.Clear();
@@ -126,7 +121,7 @@ public partial class W3MdxInstance : Node3D
         }
         else
         {
-            if (_cliff_displace)
+            if (StaticVertexTransform != null)
             {
                 BuildMeshes(opts);
             }
@@ -226,7 +221,7 @@ public partial class W3MdxInstance : Node3D
         _placeholder.Mesh = box;
         _placeholder.Position = new Vector3(0, 32, 0);
         var mat = new StandardMaterial3D { AlbedoColor = new Color(0.35f, 0.55f, 0.28f) };
-        StyleModelMaterial(mat);
+        W3ModelMaterials.ApplyClassicDefaults(mat);
         _placeholder.MaterialOverride = mat;
         AddChild(_placeholder);
     }
@@ -271,9 +266,6 @@ public partial class W3MdxInstance : Node3D
             var cliffMat = new ShaderMaterial { Shader = GD.Load<Shader>("res://addons/w3kit/shaders/w3_cliff_lit.gdshader") };
             if (!string.IsNullOrEmpty(texPath) && textures != null)
                 cliffMat.SetShaderParameter("albedo_tex", textures.Call("get_texture", texPath).As<Texture2D>());
-            cliffMat.SetShaderParameter("light_dir", new Vector3(0.45f, 0.85f, 0.28f).Normalized());
-            cliffMat.SetShaderParameter("light_ambient", 0.35f);
-            cliffMat.SetShaderParameter("light_scale", 1.1f);
             return cliffMat;
         }
         GArray layers = new();
@@ -482,54 +474,11 @@ public partial class W3MdxInstance : Node3D
 
     private StandardMaterial3D MakeLayerMaterial(GodotObject layer, string texPath, int layerFm)
     {
-        var mat = new StandardMaterial3D
-        {
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            TextureFilter = BaseMaterial3D.TextureFilterEnum.Nearest,
-        };
-        StyleModelMaterial(mat);
-        if (layer != null)
-        {
-            Color c = mat.AlbedoColor;
-            c.A = Mathf.Clamp(GF(layer, "alpha"), 0f, 1f);
-            mat.AlbedoColor = c;
-            if ((GI(layer, "flags") & 0x1) != 0)
-                mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-        }
-        string pathL = texPath.ToLowerInvariant();
-        bool looksCutout = pathL.Contains("tree") || pathL.Contains("plant") || pathL.Contains("leaf")
-            || pathL.Contains("canopy") || pathL.Contains("grass") || pathL.Contains("vine");
-        bool looksAdd = pathL.Contains("glow") || pathL.Contains("fire") || pathL.Contains("flame")
-            || pathL.Contains("torch") || pathL.Contains("lensflare") || pathL.Contains("lightning");
-        if (!string.IsNullOrEmpty(texPath) && textures != null)
-        {
-            mat.AlbedoTexture = textures.Call("get_texture", texPath).As<Texture2D>();
-            if (layerFm == 1 || looksCutout)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-                mat.AlphaScissorThreshold = 0.28f;
-            }
-            else if (layerFm == 2)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-            }
-            else if (layerFm == 3 || layerFm == 4 || looksAdd)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-                mat.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
-                mat.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-            }
-            else if (layerFm == 5 || layerFm == 6)
-            {
-                mat.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-                mat.BlendMode = BaseMaterial3D.BlendModeEnum.Mul;
-            }
-        }
-        else
-        {
-            mat.AlbedoColor = new Color(0.45f, 0.55f, 0.35f);
-        }
-        return mat;
+        Texture2D? texture = !string.IsNullOrEmpty(texPath) && textures != null
+            ? textures.Call("get_texture", texPath).As<Texture2D>() : null;
+        return W3ModelMaterials.CreateClassic(texture, texPath, layerFm,
+            layer != null ? GI(layer, "flags") : 0,
+            layer != null ? GF(layer, "alpha") : 1f);
     }
 
     private GArray BuildMeshes(GDictionary opts)
@@ -826,8 +775,8 @@ public partial class W3MdxInstance : Node3D
                     vtx = new Vector3(vtx.Z, vtx.Y, -vtx.X);
                     nrm = new Vector3(nrm.Z, nrm.Y, -nrm.X).Normalized();
                 }
-                if (_cliff_displace)
-                    vtx.Y += SampleCliffGround(vtx.X, vtx.Z) * 128f;
+                if (StaticVertexTransform != null)
+                    (vtx, nrm) = StaticVertexTransform(vtx, nrm);
                 st.SetNormal(nrm);
                 if (tangents.Length >= (idx + 1) * 4)
                 {
@@ -842,31 +791,6 @@ public partial class W3MdxInstance : Node3D
             }
         }
         return st.Commit();
-    }
-
-    private float SampleCliffGround(float localX, float localZ)
-    {
-        int gridW = _cliff_ground_grid_size.X;
-        int gridH = _cliff_ground_grid_size.Y;
-        if (gridW >= 2 && gridH >= 2 && _cliff_ground_grid.Length >= gridW * gridH)
-        {
-            float gx = Mathf.Clamp(localX / 128f, 0f, gridW - 1);
-            float gz = Mathf.Clamp(localZ / 128f, 0f, gridH - 1);
-            int x0 = (int)Mathf.Floor(gx);
-            int z0 = (int)Mathf.Floor(gz);
-            int x1 = Math.Min(x0 + 1, gridW - 1);
-            int z1 = Math.Min(z0 + 1, gridH - 1);
-            float tx = gx - x0;
-            float tz = gz - z0;
-            float g0 = Mathf.Lerp(_cliff_ground_grid[z0 * gridW + x0], _cliff_ground_grid[z0 * gridW + x1], tx);
-            float g1 = Mathf.Lerp(_cliff_ground_grid[z1 * gridW + x0], _cliff_ground_grid[z1 * gridW + x1], tx);
-            return Mathf.Lerp(g0, g1, tz);
-        }
-        float u = Mathf.Clamp(localX / 128f, 0f, 1f);
-        float v = Mathf.Clamp(localZ / 128f, 0f, 1f);
-        float fallback0 = Mathf.Lerp(_cliff_ground.X, _cliff_ground.Y, u);
-        float fallback1 = Mathf.Lerp(_cliff_ground.Z, _cliff_ground.W, u);
-        return Mathf.Lerp(fallback0, fallback1, v);
     }
 
     private string TextureForGeoset(GodotObject g, int teamColor = 0, string cliffTexOverride = "")
@@ -967,16 +891,6 @@ public partial class W3MdxInstance : Node3D
 
     private static string ReplaceableRelPath(int replaceableId) =>
         ReplaceableStems.TryGetValue(replaceableId, out string stem) ? stem + ".blp" : "";
-
-    private static void StyleModelMaterial(StandardMaterial3D mat)
-    {
-        if (mat == null)
-            return;
-        mat.Metallic = 0f;
-        mat.Roughness = 0.82f;
-        mat.SpecularMode = BaseMaterial3D.SpecularModeEnum.SchlickGgx;
-        mat.MetallicSpecular = 0.24f;
-    }
 
     // ---- ???? --------------------------------------------------------
 

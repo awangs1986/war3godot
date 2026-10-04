@@ -24,6 +24,9 @@ public sealed class WarsmashTerrainRules
     private readonly Func<int, string> _rampModelDirectory;
     private readonly Func<string, int, int> _cliffVariation;
     private byte[]? _authoredCliffTextures;
+    private readonly List<CliffPlacement> _missingModels = new();
+    private readonly HashSet<int> _missingTiles = new();
+    public IReadOnlyList<CliffPlacement> MissingModels => _missingModels.AsReadOnly();
 
     public WarsmashTerrainRules(
         W3TerrainMap map,
@@ -36,15 +39,15 @@ public sealed class WarsmashTerrainRules
         _modelExists = modelExists ?? (_ => true);
         _cliffModelDirectory = cliffModelDirectory ?? (_ => "Cliffs");
         _rampModelDirectory = rampModelDirectory ?? (_ => "CliffTrans");
-        _cliffVariation = cliffVariation ?? ((_, authored) => Math.Max(0, authored));
+        _cliffVariation = cliffVariation ?? ResolveVariation;
     }
 
     /// <summary>
     /// The authored per-corner cliff texture as of the latest RebuildCliffs()
-    /// call, before the ramp branch stamps its resolved texture onto corners.
+    /// call. Ramp texture propagation lives in a separate render-only array.
     /// HiveWE's sealed real_tile_texture reads the AUTHORED value
     /// (docs/GROUND_TEX_HIVEWE_SEAL.md) — GroundLayout must use this, not the
-    /// post-rebuild Corner.CliffTexture.
+    /// effective ramp texture.
     /// </summary>
     public byte AuthoredCliffTexture(int x, int y)
     {
@@ -58,11 +61,15 @@ public sealed class WarsmashTerrainRules
     public IReadOnlyList<CliffPlacement> RebuildCliffs()
     {
         _map.InitializeRenderCorners();
-        // Every rebuild flow recreates the map mirror from authored data before
-        // calling this, so the corners are authored state at this point.
+        _missingModels.Clear();
+        _missingTiles.Clear();
+        // The editor refreshes only a dirty region of a persistent mirror.
+        // Never stamp derived ramp textures into its authored corner fields:
+        // a later rebuild would mistake those values for authored data.
         _authoredCliffTextures = new byte[_map.Width * _map.Height];
         for (int i = 0; i < _map.Corners.Length && i < _authoredCliffTextures.Length; i++)
             _authoredCliffTextures[i] = _map.Corners[i].CliffTexture;
+        var renderCliffTextures = (byte[])_authoredCliffTextures.Clone();
         var cliffs = new List<CliffPlacement>();
         for (int x = 0; x < _map.TileWidth; x++)
         {
@@ -77,7 +84,7 @@ public sealed class WarsmashTerrainRules
                 int baseLayer = Min4(bl.LayerHeight, br.LayerHeight, tl.LayerHeight, tr.LayerHeight);
                 bool facingDown = tl.LayerHeight >= bl.LayerHeight && tr.LayerHeight >= br.LayerHeight;
                 bool facingLeft = br.LayerHeight >= bl.LayerHeight && tr.LayerHeight >= tl.LayerHeight;
-                int cliffTexture = ResolveCliffTexture(bl, br, tl, tr);
+                int cliffTexture = ResolveCliffTexture(renderCliffTextures, x, y);
 
                 bool insideFacingEdge = !(facingDown && y == 0) && !(!facingDown && y >= _map.Height - 2) &&
                     !(facingLeft && x == 0) && !(!facingLeft && x >= _map.Width - 2);
@@ -110,14 +117,22 @@ public sealed class WarsmashTerrainRules
                                 cliffs.Add(new CliffPlacement(placementX, placementY, tag, true, cliffTexture, 0,
                                     PlacementBase(placementX, placementY), modelPath, x, y));
                                 bl.Romp = true;
-                                bl.CliffTexture = (byte)cliffTexture;
-                                br.CliffTexture = (byte)cliffTexture;
-                                tl.CliffTexture = (byte)cliffTexture;
-                                tr.CliffTexture = (byte)cliffTexture;
-                                W3TerrainMap.Corner neighbour = _map.GetCorner(
-                                    x + (horizontalRamp ? (facingLeft ? -1 : 1) : 0),
-                                    y + (verticalRamp ? (facingDown ? -1 : 1) : 0));
-                                neighbour.CliffTexture = (byte)cliffTexture;
+                                // Preserve Warsmash's within-pass propagation
+                                // for cliff selection, without changing HiveWE's
+                                // authored ground-texture ownership.
+                                renderCliffTextures[y * _map.Width + x] = (byte)cliffTexture;
+                                renderCliffTextures[y * _map.Width + x + 1] = (byte)cliffTexture;
+                                renderCliffTextures[(y + 1) * _map.Width + x] = (byte)cliffTexture;
+                                renderCliffTextures[(y + 1) * _map.Width + x + 1] = (byte)cliffTexture;
+                                int neighbourX = x + (horizontalRamp ? (facingLeft ? -1 : 1) : 0);
+                                int neighbourY = y + (verticalRamp ? (facingDown ? -1 : 1) : 0);
+                                // A two-tile ramp can replace an earlier missing ordinary cliff.
+                                _missingTiles.Remove(y * _map.TileWidth + x);
+                                _missingTiles.Remove(neighbourY * _map.TileWidth + neighbourX);
+                                _missingModels.RemoveAll(p => (p.X == x && p.Y == y)
+                                    || (p.X == neighbourX && p.Y == neighbourY));
+                                W3TerrainMap.Corner neighbour = _map.GetCorner(neighbourX, neighbourY);
+                                renderCliffTextures[neighbourY * _map.Width + neighbourX] = (byte)cliffTexture;
                                 neighbour.Romp = true;
                                 continue;
                             }
@@ -137,7 +152,14 @@ public sealed class WarsmashTerrainRules
                 int variation = _cliffVariation(cliffTag, bl.CliffVariation);
                 string cliffDirectory = _cliffModelDirectory(cliffTexture);
                 string cliffPath = $"Doodads/Terrain/{cliffDirectory}/{cliffDirectory}{cliffTag}{variation}.mdx";
-                cliffs.Add(new CliffPlacement(x, y, cliffTag, false, cliffTexture, variation, baseLayer, cliffPath));
+                var placement = new CliffPlacement(x, y, cliffTag, false, cliffTexture, variation, baseLayer, cliffPath);
+                if (_modelExists(cliffPath))
+                    cliffs.Add(placement);
+                else
+                {
+                    _missingModels.Add(placement);
+                    _missingTiles.Add(y * _map.TileWidth + x);
+                }
             }
         }
         return cliffs;
@@ -147,6 +169,10 @@ public sealed class WarsmashTerrainRules
     {
         if (!_map.ContainsTile(x, y))
             return false;
+        // A missing ordinary cliff must not remove the only remaining surface.
+        // Keep the heightfield fallback and report the missing asset separately.
+        if (_missingTiles.Contains(y * _map.TileWidth + x))
+            return true;
         W3TerrainMap.Corner corner = _map.GetCorner(x, y);
         return !((corner.Cliff || corner.Romp) && !_map.IsRampEntrance(x, y));
     }
@@ -157,14 +183,15 @@ public sealed class WarsmashTerrainRules
         _map.GetCorner(x, y + 1).LayerHeight,
         _map.GetCorner(x + 1, y + 1).LayerHeight);
 
-    private static int ResolveCliffTexture(W3TerrainMap.Corner bl, W3TerrainMap.Corner br, W3TerrainMap.Corner tl, W3TerrainMap.Corner tr)
+    private int ResolveCliffTexture(byte[] textures, int x, int y)
     {
-        int texture = bl.CliffTexture;
+        int bl = y * _map.Width + x;
+        int texture = textures[bl];
         if (texture != 15)
             return texture;
-        if (tl.CliffTexture != 15) return tl.CliffTexture;
-        if (tr.CliffTexture != 15) return tr.CliffTexture;
-        if (br.CliffTexture != 15) return br.CliffTexture;
+        if (textures[bl + _map.Width] != 15) return textures[bl + _map.Width];
+        if (textures[bl + _map.Width + 1] != 15) return textures[bl + _map.Width + 1];
+        if (textures[bl + 1] != 15) return textures[bl + 1];
         return 1;
     }
 
@@ -172,6 +199,10 @@ public sealed class WarsmashTerrainRules
         ramp ? (char)('L' - (relativeHeight * 4)) : (char)('A' + relativeHeight);
 
     private static int Min4(int a, int b, int c, int d) => Math.Min(Math.Min(a, b), Math.Min(c, d));
+
+    /// <summary>HiveWE variation policy shared by all production callers.</summary>
+    public static int ResolveVariation(string tag, int authored) =>
+        Math.Clamp(authored, 0, CliffVariationMaximum.GetValueOrDefault(tag, 0));
 
     /// <summary>
     /// HiveWE cliff variation table — highest authored variation index per tag.

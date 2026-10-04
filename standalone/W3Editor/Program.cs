@@ -7,6 +7,12 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--terrain-render-smoke"))
+        {
+            Environment.ExitCode = Rendering.TerrainRenderingSmoke.Run();
+            return;
+        }
+
         if (args.Any(a => a == "--plugin-preview-smoke"))
         {
             string result = Rendering.PluginPreviewPass.SmokeTest();

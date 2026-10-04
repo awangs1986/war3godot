@@ -93,5 +93,6 @@ void fragment() {
 	ROUGHNESS = 0.08;
 	METALLIC = 0.06;
 	SPECULAR = 0.82;
-	EMISSION = color.rgb * 0.025;
+	// Water reflects scene light; it must not glow independently at night.
+	EMISSION = vec3(0.0);
 }

@@ -160,10 +160,8 @@ public sealed class GroundLayout
         W3TerrainMap.Corner own = _map.GetCorner(x, y);
         if (aRomp || (aCliff && !own.Ramp))
         {
-            // HiveWE reads the AUTHORED corner_cliff_texture; RebuildCliffs'
-            // ramp branch (Warsmash-style) stamps its resolved texture onto
-            // Corner.CliffTexture before this runs, so the live corner value
-            // would silently deviate from the seal on ramp-bearing maps.
+            // HiveWE reads AUTHORED corner_cliff_texture. The cliff scheduler's
+            // derived ramp textures must never enter this ownership lookup.
             int texture = _rules.AuthoredCliffTexture(x, y);
             if (texture == 15)
                 texture -= 14;

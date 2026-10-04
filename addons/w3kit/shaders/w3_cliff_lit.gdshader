@@ -5,21 +5,16 @@ shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
-uniform vec3 light_dir = vec3(0.45, 0.85, 0.28);
-uniform float light_ambient = 0.35;
-uniform float light_scale = 1.1;
 uniform bool flat_lighting = false;
 uniform sampler2D shd_tex : hint_default_black, filter_linear, repeat_disable;
 uniform bool shd_enabled = false;
 uniform vec2 map_origin = vec2(0.0);
 uniform vec2 map_size = vec2(1.0);
 
-varying vec3 v_world_normal;
 varying vec3 v_world_pos;
 
 
 void vertex() {
-	v_world_normal = normalize(MODEL_NORMAL_MATRIX * NORMAL);
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -35,6 +30,9 @@ void fragment() {
 		ALBEDO = vec3(0.0);
 		EMISSION = tex.rgb;
 		AO = 1.0;
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+		ROUGHNESS = 1.0;
 	} else {
 		ALBEDO = tex.rgb;
 		ROUGHNESS = 0.88;
