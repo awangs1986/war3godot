@@ -100,10 +100,15 @@ public static class TerrainBrush
     /// One HiveWE <c>TerrainBrush::apply(frame_delta)</c> at mouse corner (cx, cy).
     /// Press should pass <paramref name="frameDelta"/> = 0.5; drag passes real dt.
     /// </summary>
+    public static void Apply(W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke,
+        float frameDelta = 0.5f) => Apply(map, (float)cx, (float)cy, s, erase, stroke, frameDelta);
+
+    /// <summary>Preserves HiveWE mouse_world fractions for footprint and ramp direction.</summary>
     public static void Apply(
-        W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke,
+        W3EMap map, float cx, float cy, BrushSettings s, bool erase, BrushStroke stroke,
         float frameDelta = 0.5f)
     {
+        if (!float.IsFinite(cx) || !float.IsFinite(cy)) return;
         BrushOp op = Reverse(s.Op, erase);
         if (op == BrushOp.None)
             return;
@@ -486,7 +491,7 @@ public static class TerrainBrush
 
     private static void ApplyRamps(
         W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, int mouseCx, int mouseCy)
+        Func<int, int, bool> inside, float mouseCx, float mouseCy)
     {
         // HiveWE: horizontal = (mouse_pos.x > i) - (mouse_pos.x < i)
         for (int j = ay; j < ab; j++)
@@ -573,23 +578,25 @@ public static class TerrainBrush
             for (int dy = 0; dy <= 2; dy++)
                 SetRamp(i + dx * horizontal, j + dy * vertical);
 
+        // HiveWE L-corner completion adds only the flag. These corners keep
+        // their own authored cliff texture (sealed ground-texture ownership).
         if (allowH || allowD)
         {
             if (Valid(i + horizontal, j + 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
                 && RampAt(i, j + 1) && RampAt(i, j + 2))
-                SetRamp(i + horizontal, j + 1);
+                map.GetCorner(i + horizontal, j + 1)!.Ramp = true;
             if (Valid(i + horizontal, j - 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
                 && RampAt(i, j - 1) && RampAt(i, j - 2))
-                SetRamp(i + horizontal, j - 1);
+                map.GetCorner(i + horizontal, j - 1)!.Ramp = true;
         }
         if (allowV || allowD)
         {
             if (Valid(i + 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
                 && RampAt(i + 1, j) && RampAt(i + 2, j))
-                SetRamp(i + 1, j + vertical);
+                map.GetCorner(i + 1, j + vertical)!.Ramp = true;
             if (Valid(i - 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
                 && RampAt(i - 1, j) && RampAt(i - 2, j))
-                SetRamp(i - 1, j + vertical);
+                map.GetCorner(i - 1, j + vertical)!.Ramp = true;
         }
     }
 }

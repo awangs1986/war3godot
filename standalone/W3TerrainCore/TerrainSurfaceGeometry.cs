@@ -3,8 +3,8 @@ using System.Numerics;
 namespace Diablo1Like.W3.Terrain;
 
 /// <summary>
-/// HiveWE terrain.vert/cliff.vert surface conventions, converted to Y-up.
-/// Shared by the editor and Godot; see docs/TERRAIN_CLIFF_CROSSCHECK_2026-10-04.md.
+/// HiveWE ground triangles and Warsmash cliff seam normals, converted to Y-up.
+/// Shared by the editor and Godot; see docs/TERRAIN_CLIFF_SEAMS_2026-10-05.md.
 /// </summary>
 public static class TerrainSurfaceGeometry
 {
@@ -26,7 +26,7 @@ public static class TerrainSurfaceGeometry
     /// <summary>
     /// Shared cliff deformation after the model has been rotated to local Y-up.
     /// Retains the existing Warsmash 3×3 bilinear displacement convention and
-    /// HiveWE normal convention. Placement/base-layer offsets are applied later.
+    /// Warsmash boundary-normal convention. Placement/base-layer offsets are applied later.
     /// </summary>
     public static (Vector3 Position, Vector3 Normal) DeformCliffVertex(W3TerrainMap map,
         int tileX, int tileY, Vector3 localPosition, Vector3 modelNormal)
@@ -47,24 +47,39 @@ public static class TerrainSurfaceGeometry
     }
 
     /// <summary>
-    /// Deform a cliff's rotated model normal using the same raw-height central
-    /// differences as the ground shader. Layer steps must not enter this normal.
-    /// localPosition and modelNormal are already rotated to Y-up world axes.
+    /// Warsmash TerrainShaders.Cliffs: each model-space grid plane replaces the
+    /// corresponding normal component with the raw terrain gradient (Y-up).
+    /// At a grid corner all components match the ground shader, even when the
+    /// authored cliff normal tilts toward the wall. Off-grid components retain
+    /// the model's shape. Layer steps must not enter the height differences.
     /// </summary>
     public static Vector3 CliffNormal(W3TerrainMap map, int tileX, int tileY,
         Vector3 localPosition, Vector3 modelNormal)
     {
-        int x = Math.Clamp((int)(tileX + localPosition.X / W3TerrainMap.TileSize), 0, map.Width - 1);
-        int y = Math.Clamp((int)(tileY + localPosition.Z / W3TerrainMap.TileSize), 0, map.Height - 1);
+        bool edgeX = TryGridCoordinate(localPosition.X, out int gridX);
+        bool edgeY = TryGridCoordinate(localPosition.Z, out int gridY);
+        bool edgeHeight = TryGridCoordinate(localPosition.Y, out _);
+        // Use the same snapped corner for both edge classification and the
+        // stencil: tiny negative MDX coordinates must not select the prior tile.
+        int x = Math.Clamp(edgeX ? tileX + gridX : (int)(tileX + localPosition.X / W3TerrainMap.TileSize), 0, map.Width - 1);
+        int y = Math.Clamp(edgeY ? tileY + gridY : (int)(tileY + localPosition.Z / W3TerrainMap.TileSize), 0, map.Height - 1);
         float left = map.GetCorner(Math.Max(x - 1, 0), y).GroundHeight;
         float right = map.GetCorner(Math.Min(x + 1, map.Width - 1), y).GroundHeight;
         float down = map.GetCorner(x, Math.Max(y - 1, 0)).GroundHeight;
         float up = map.GetCorner(x, Math.Min(y + 1, map.Height - 1)).GroundHeight;
-        Vector3 terrain = Vector3.Normalize(new Vector3(left - right, 2f, down - up));
-        // HiveWE: normalize(rotated_normal.xy + terrain_normal.xy,
-        //                   rotated_normal.z * terrain_normal.z), Z-up → Y-up.
-        Vector3 combined = new(modelNormal.X + terrain.X, modelNormal.Y * terrain.Y,
-            modelNormal.Z + terrain.Z);
+        Vector3 combined = modelNormal;
+        if (edgeX) combined.X = left - right;
+        if (edgeY) combined.Z = down - up;
+        if (edgeHeight) combined.Y = 2f;
         return combined.LengthSquared() > 1e-12f ? Vector3.Normalize(combined) : Vector3.UnitY;
+    }
+
+    private static bool TryGridCoordinate(float position, out int coordinate)
+    {
+        coordinate = (int)MathF.Round(position / W3TerrainMap.TileSize);
+        // Real classic CliffsAAAC0 vertices intended to sit at zero include
+        // -0.00034/-0.00024 world units. Warsmash's exact equality misses them.
+        // This tolerance is < 1/100000 tile; positions/UVs are never altered.
+        return MathF.Abs(position - coordinate * W3TerrainMap.TileSize) <= 0.001f;
     }
 }

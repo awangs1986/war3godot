@@ -47,9 +47,35 @@ internal static class TerrainRenderingSmoke
         checks["cliffRoofMatchesGroundNormalOnSlope"] = Enumerable.Range(0, 3)
             .All(i => Vector3.Distance(Normal(sloped, i), expected) < 0.00001f);
         Vector3 modelNormal = Vector3.Normalize(new Vector3(0.2f, -0.4f, 0.9f));
-        var flat = BuildCliff(CreateMap(8), modelNormal);
+        var flat = BuildCliff(CreateMap(8), modelNormal, new[] { new Vector3(-79, 37, 53), new Vector3(-83, 43, 59), new Vector3(-89, 47, 61) });
         Vector3 rotated = new(modelNormal.Y, modelNormal.Z, -modelNormal.X);
-        checks["flatCliffNormalsUnchanged"] = Vector3.Distance(Normal(flat, 0), rotated) < 0.00001f;
+        checks["offGridCliffNormalsUnchanged"] = Vector3.Distance(Normal(flat, 0), rotated) < 0.00001f;
+        // Measured classic CliffsACAA0 boundary normal/position. Before the
+        // seam correction this roof corner differed from flat ground by 31.5°.
+        Vector3 authoredEdge = new(0.376173f, -0.361763f, 0.853007f); // MDX axes
+        Vector3[] edgePositions = { new(-128, 128, 256), new(0, 128, 256), new(-128, 0, 0) };
+        var seamFlat = BuildCliff(CreateMap(8), authoredEdge, edgePositions);
+        checks["authoredCliffEdgeNormalsMeetFlatGround"] = Enumerable.Range(0, 3)
+            .All(i => Vector3.Distance(Normal(seamFlat, i), Vector3.UnitY) < 0.00001f);
+        var seamSlope = BuildCliff(slope, authoredEdge, edgePositions);
+        checks["authoredCliffEdgeNormalsMeetSlopedGround"] = Enumerable.Range(0, 3)
+            .All(i => Vector3.Distance(Normal(seamSlope, i), expected) < 0.00001f);
+
+        var curved = CreateMap(8);
+        for (int y = 0; y < curved.Height; y++)
+        for (int x = 0; x < curved.Width; x++)
+            curved.GetCorner(x, y).GroundHeight = x * x * 0.125f + y * y * 0.0625f;
+        // Actual CliffsAAAC0 near-zero coordinates, plus near-128 rounding.
+        Vector3[] nearGrid = { new(0, -0.00034f, 256), new(-128, -0.00024f, 0), new(-128, 127.99976f, 256) };
+        var rounded = BuildCliff(curved, authoredEdge, nearGrid);
+        Vector3[] groundNormals = { new(-1f, 2f, -0.5f), new(-1f, 2f, -0.75f), new(-1.5f, 2f, -0.75f) };
+        checks["roundedCliffEdgesUseMatchingGroundStencil"] = Enumerable.Range(0, 3)
+            .All(i => Vector3.Distance(Normal(rounded, i), Vector3.Normalize(groundNormals[i])) < 0.00001f);
+        var partial = TerrainSurfaceGeometry.CliffNormal(curved, 2, 2, new Vector3(128, 73, 45), rotated);
+        checks["cliffEdgeCorrectsOnlyGridComponents"] = Vector3.Distance(partial,
+            Vector3.Normalize(new Vector3(-1.5f, rotated.Y, rotated.Z))) < 0.00001f;
+        var offGrid = TerrainSurfaceGeometry.CliffNormal(curved, 2, 2, new Vector3(0.01f, 73, 45), rotated);
+        checks["nearbyInteriorNormalIsNotSnapped"] = Vector3.Distance(offGrid, rotated) < 0.00001f;
         // First model vertex is (0,0,0), at corner (2,2): raw height=.75
         // tiles; base layer 2 contributes zero. No extra vertical scale.
         checks["cliffHeightUses128WorldUnitsPerTile"] = MathF.Abs(sloped[1] - 96f) < 0.00001f;
@@ -129,7 +155,7 @@ internal static class TerrainRenderingSmoke
         return wa * Height(a) + wb * Height(b) + (1f - wa - wb) * Height(c);
     }
 
-    private static List<float> BuildCliff(W3TerrainMap map, Vector3 normal)
+    private static List<float> BuildCliff(W3TerrainMap map, Vector3 normal, Vector3[]? positions = null)
     {
         using var scene = new GlTerrainScene();
         // Exercise the production mesh emission without requiring a GL context
@@ -138,7 +164,8 @@ internal static class TerrainRenderingSmoke
         var model = new MdxStaticModel();
         model.Geosets.Add(new MdxStaticModel.Geoset
         {
-            Positions = new() { 0, 0, 0, 0, 128, 0, -128, 0, 0 },
+            Positions = positions == null ? new() { 0, 0, 0, 0, 128, 0, -128, 0, 0 }
+                : positions.SelectMany(p => new[] { p.X, p.Y, p.Z }).ToList(),
             Normals = Enumerable.Range(0, 3).SelectMany(_ => new[] { normal.X, normal.Y, normal.Z }).ToList(),
             Faces = new() { 0, 1, 2 },
         });

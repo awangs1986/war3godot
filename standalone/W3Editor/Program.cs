@@ -7,6 +7,12 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (args.Contains("--ramp-brush-smoke"))
+        {
+            Environment.ExitCode = Rendering.RampBrushSmoke.Run();
+            return;
+        }
+
         if (args.Contains("--terrain-render-smoke"))
         {
             Environment.ExitCode = Rendering.TerrainRenderingSmoke.Run();

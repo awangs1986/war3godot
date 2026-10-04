@@ -81,7 +81,7 @@ public sealed class W3HeightSampler
         int dh = Math.Abs(from.LayerHeight - to.LayerHeight);
         if (dh <= 1)
             return true;
-        if (from.Ramp || to.Ramp)
+        if (from.EffectiveRamp || to.EffectiveRamp)
             return dh <= 2;
         return false;
     }

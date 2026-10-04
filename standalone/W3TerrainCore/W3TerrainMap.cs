@@ -31,6 +31,9 @@ public sealed class W3TerrainMap
         public byte LayerHeight;
 
         // Warsmash RenderCorner runtime state.
+        internal bool RampSuppressed;
+        /// <summary>Warsmash render-time validation; Ramp remains the saved authored flag.</summary>
+        public bool EffectiveRamp => Ramp && !RampSuppressed;
         public bool Cliff;
         public bool Romp;
         public bool HideCliff;
@@ -208,6 +211,7 @@ public sealed class W3TerrainMap
     {
         foreach (Corner corner in Corners)
         {
+            corner.RampSuppressed = false;
             corner.Cliff = false;
             corner.Romp = false;
             corner.HideCliff = false;
@@ -233,7 +237,7 @@ public sealed class W3TerrainMap
         Corner br = GetCorner(x + 1, y);
         Corner tl = GetCorner(x, y + 1);
         Corner tr = GetCorner(x + 1, y + 1);
-        return bl.Ramp && br.Ramp && tl.Ramp && tr.Ramp &&
+        return bl.EffectiveRamp && br.EffectiveRamp && tl.EffectiveRamp && tr.EffectiveRamp &&
             !(bl.LayerHeight == tr.LayerHeight && tl.LayerHeight == br.LayerHeight);
     }
 

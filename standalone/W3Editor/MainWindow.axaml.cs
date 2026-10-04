@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private bool _strokeErase;
     private bool _strokeApplied;
     private (int X, int Y) _strokeAnchor = (-1, -1); // Shift 直线笔刷锚点
+    private (float X, float Y) _rampStrokeAnchor = (-1, -1);
     private readonly Stopwatch _strokeClock = new();
     private long _lastApplyTimestamp;
     private bool _leftSidebarVisible = true;
@@ -49,6 +50,13 @@ public partial class MainWindow : Window
         return Math.Abs(cx - _strokeAnchor.X) >= Math.Abs(cy - _strokeAnchor.Y)
             ? (cx, _strokeAnchor.Y)
             : (_strokeAnchor.X, cy);
+    }
+
+    private (float X, float Y) ConstrainRampToLine(float cx, float cy, bool shift)
+    {
+        if (!shift || _rampStrokeAnchor.X < 0) return (cx, cy);
+        return MathF.Abs(cx - _rampStrokeAnchor.X) >= MathF.Abs(cy - _rampStrokeAnchor.Y)
+            ? (cx, _rampStrokeAnchor.Y) : (_rampStrokeAnchor.X, cy);
     }
 
     public MainWindow()
@@ -535,9 +543,36 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private bool TryPointToCorner(Avalonia.Point posImage, out int cx, out int cy)
+    private bool TryPointToCorner(Avalonia.Point position, out int cx, out int cy)
     {
         cx = cy = -1;
+        if (!TryPointToMapPixel(position, out double px, out double py)) return false;
+        // Preserve the original double-precision cell selection for other tools.
+        cx = (int)(px / _viewScale);
+        cy = _session.Map!.Height - 1 - (int)(py / _viewScale);
+        return cx >= 0 && cy >= 0 && cx < _session.Map.Width && cy < _session.Map.Height;
+    }
+
+    private bool TryPointToBrushPosition(Avalonia.Point position, out float cx, out float cy)
+    {
+        if (_brush.Op == BrushOp.Ramp) return TryPointToCorner(position, out cx, out cy);
+        bool found = TryPointToCorner(position, out int x, out int y);
+        cx = x; cy = y;
+        return found;
+    }
+
+    private bool TryPointToCorner(Avalonia.Point position, out float cx, out float cy)
+    {
+        cx = cy = -1;
+        if (!TryPointToMapPixel(position, out double px, out double py)) return false;
+        cx = (float)(px / _viewScale);
+        cy = (float)(_session.Map!.Height - 1 - py / _viewScale);
+        return true;
+    }
+
+    private bool TryPointToMapPixel(Avalonia.Point posImage, out double px, out double py)
+    {
+        px = py = -1;
         var map = _session.Map;
         if (map == null || ViewportImage.Source is not WriteableBitmap bmp) return false;
         double bw = ViewportImage.Bounds.Width, bh = ViewportImage.Bounds.Height;
@@ -545,12 +580,9 @@ public partial class MainWindow : Window
         if (bw <= 0 || bh <= 0 || pw <= 0 || ph <= 0) return false;
         double fit = Math.Min(bw / pw, bh / ph);
         double offX = (bw - pw * fit) / 2, offY = (bh - ph * fit) / 2;
-        double px = (posImage.X - offX) / fit;
-        double py = (posImage.Y - offY) / fit;
-        if (px < 0 || py < 0 || px >= pw || py >= ph) return false;
-        cx = (int)(px / _viewScale);
-        cy = map.Height - 1 - (int)(py / _viewScale);
-        return cx >= 0 && cy >= 0 && cx < map.Width && cy < map.Height;
+        px = (posImage.X - offX) / fit;
+        py = (posImage.Y - offY) / fit;
+        return px >= 0 && py >= 0 && px < pw && py < ph;
     }
 
     private double ViewFitScale()
@@ -587,12 +619,13 @@ public partial class MainWindow : Window
             return;
         }
         if (!props.IsLeftButtonPressed && !props.IsRightButtonPressed) return;
-        if (!TryPointToCorner(e.GetPosition(ViewportImage), out int cx, out int cy)) return;
+        if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
 
         _strokeErase = props.IsRightButtonPressed;
         _stroke = new BrushStroke();
         _strokeApplied = false;
-        _strokeAnchor = (cx, cy);
+        _strokeAnchor = ((int)cx, (int)cy);
+        _rampStrokeAnchor = (cx, cy);
         _history.BeginStroke(map);
         _strokeClock.Restart();
         _lastApplyTimestamp = 0;
@@ -620,8 +653,10 @@ public partial class MainWindow : Window
         if (TryMoveWorldDataStroke(e))
             return;
         if (_stroke == null) return;
-        if (!TryPointToCorner(e.GetPosition(ViewportImage), out int cx, out int cy)) return;
-        (cx, cy) = ConstrainToLine(cx, cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
+        (cx, cy) = _brush.Op == BrushOp.Ramp
+            ? ConstrainRampToLine(cx, cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            : ConstrainToLine((int)cx, (int)cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
         // HiveWE：每次 move 都 apply(frame_delta)，不按格插值
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
     }
@@ -663,7 +698,7 @@ public partial class MainWindow : Window
         return dt;
     }
 
-    private void ApplyBrushAt(int cx, int cy, float frameDelta)
+    private void ApplyBrushAt(float cx, float cy, float frameDelta)
     {
         var map = _session.Map;
         if (map == null || _stroke == null) return;
@@ -671,7 +706,8 @@ public partial class MainWindow : Window
         _strokeApplied = true;
         // HiveWE footprint = UI size corners; normalize can reach outside
         int reach = _brush.Radius + 6;
-        GlView.Scene.NotifyCornersChanged(cx - reach, cy - reach, cx + reach + 1, cy + reach + 1);
+        GlView.Scene.NotifyCornersChanged((int)MathF.Floor(cx) - reach, (int)MathF.Floor(cy) - reach,
+            (int)MathF.Ceiling(cx) + reach + 1, (int)MathF.Ceiling(cy) + reach + 1);
         if (!GlView.IsVisible)
             RenderViewport();
     }
@@ -894,21 +930,24 @@ public partial class MainWindow : Window
             StatusLeft.Text = "未选择笔刷 — 先在右侧“地形”页选择工具，或点击一个地面纹理";
             return;
         }
-        int cx = Math.Clamp((int)MathF.Round(cornerX), 0, map.Width - 1);
-        int cy = Math.Clamp((int)MathF.Round(cornerY), 0, map.Height - 1);
+        float cx = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerX : MathF.Round(cornerX), 0, map.Width - 1);
+        float cy = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerY : MathF.Round(cornerY), 0, map.Height - 1);
         if (_stroke == null)
         {
             _strokeErase = erase;
             _stroke = new BrushStroke();
             _strokeApplied = false;
-            _strokeAnchor = (cx, cy);
+            _strokeAnchor = ((int)cx, (int)cy);
+            _rampStrokeAnchor = (cx, cy);
             _history.BeginStroke(map);
             _strokeClock.Restart();
             _lastApplyTimestamp = 0;
             ApplyBrushAt(cx, cy, frameDelta: 0.5f);
             return;
         }
-        (cx, cy) = ConstrainToLine(cx, cy, GlView.StrokeShift);
+        (cx, cy) = _brush.Op == BrushOp.Ramp
+            ? ConstrainRampToLine(cx, cy, GlView.StrokeShift)
+            : ConstrainToLine((int)cx, (int)cy, GlView.StrokeShift);
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
     }
 
