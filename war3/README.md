@@ -2,13 +2,55 @@
 
 The binary game data in this directory is ignored by Git.
 
-- `game/`: locally extracted Warcraft 1.32.10+ (Reforged) assets. This folder
-  tree is the only supported asset source; MPQ archives are never opened at
-  runtime or during import.
+## Resource version and provenance
+
+To reproduce the terrain work, use the existing resource exports from the
+recorded Warcraft III: Reforged installation. Do not select an arbitrary
+newer release based on the previous `1.32.10+` wording: that was not a tested
+compatibility range.
+
+| Item | Recorded value |
+| --- | --- |
+| Source installation | `C:\Warcraft.III.R` |
+| Version | **2.0.4, recalled by the owner on 2026-10-10; not yet verified** |
+| Exact build | Not recorded; pending inspection of the source installation |
+| Local project using these exports | `C:\projects\war3godot` |
+
+The installation path is recorded in `local_paths.json` and is also the
+default `--install` in `tools/casctool/extract_reforged.py` and
+`tools/casctool/extract_model_manifest.py`. These paths identify the source;
+they do not establish its patch version. The extractor's historical `1.32`
+comment is not version-detection output either.
+
+Before declaring a verified resource baseline, record the active version/build
+from the source install's `.build.info` and the product/file version of its
+`Warcraft III.exe`. An updated installation alone does not establish the
+version of older exports: also confirm that `game/` and `reforged/` came from
+that build. The source computer was unreachable when this note was written,
+so **2.0.4 must not yet be described as a verified requirement**.
+
+## Required resource directories
+
+- `game/`: extracted game data, including classic/SD terrain atlases,
+  `TerrainArt/Terrain.slk`, `TerrainArt/CliffTypes.slk`, cliff and ramp models
+  under `Doodads/Terrain/`, and their referenced textures.
+- `reforged/`: extracted HD cache for the Reforged model/material paths,
+  including the applicable diffuse, normal, ORM and emissive textures.
 - `maps/LostTemple/source/`: extracted map folder (`war3map.*` files).
 - `maps/LostTemple/lost_temple.res`: project-native imported map resource —
   this is what the game loads.
 - `local_paths.json`: local source and preview paths.
+
+Keep the game-relative directory structure in both exports. Runtime resource
+loading uses extracted files, not the CASC installation directly.
+The standalone editor locates `war3/game` and `war3/reforged` beneath the project
+root; Godot's asset configuration defaults are recorded in `local_paths.json`.
+
+**The terrain path still needs classic/SD assets from the Reforged install.**
+Ground transition atlases prefer classic textures/PNG sidecars; replacing them
+with HD `*_diffuse.dds` atlases changes the alpha masks and can reintroduce
+square transitions. See [the HiveWE ground texture seal](../docs/GROUND_TEX_HIVEWE_SEAL.md).
+HD-only exports are therefore insufficient for reproducing this terrain setup.
 
 ## Map pipeline (Reforged-only)
 
