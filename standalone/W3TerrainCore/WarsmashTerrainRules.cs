@@ -90,23 +90,37 @@ public sealed class WarsmashTerrainRules
                     !(facingLeft && x == 0) && !(!facingLeft && x >= _map.Width - 2);
                 if (insideFacingEdge)
                 {
-                    bool verticalRamp = bl.Ramp != br.Ramp && tl.Ramp != tr.Ramp;
-                    bool horizontalRamp = bl.Ramp != tl.Ramp && br.Ramp != tr.Ramp;
+                    bool verticalRamp = bl.EffectiveRamp != br.EffectiveRamp && tl.EffectiveRamp != tr.EffectiveRamp;
+                    bool horizontalRamp = bl.EffectiveRamp != tl.EffectiveRamp && br.EffectiveRamp != tr.EffectiveRamp;
                     if (verticalRamp || horizontalRamp)
                     {
-                        int blockedX = x + (horizontalRamp ? (facingLeft ? -1 : 1) : 0);
-                        int blockedY = y + (verticalRamp ? (facingDown ? -1 : 1) : 0);
-                        bool blocked = _map.ContainsTile(blockedX, blockedY) && _map.GetCorner(blockedX, blockedY).Cliff;
+                        // Warsmash checks the two facing neighbours independently.
+                        // When both ramp patterns match, a diagonal check is wrong.
+                        bool blocked = (verticalRamp && _map.GetCorner(x, y + (facingDown ? -1 : 1)).Cliff)
+                            || (horizontalRamp && _map.GetCorner(x + (facingLeft ? -1 : 1), y).Cliff);
                         int tlHeight = tl.LayerHeight - baseLayer;
                         int trHeight = tr.LayerHeight - baseLayer;
                         int brHeight = br.LayerHeight - baseLayer;
                         int blHeight = bl.LayerHeight - baseLayer;
-                        bool invalid = blocked || tlHeight > 1 || trHeight > 1 || brHeight > 1 || blHeight > 1;
+                        bool invalid = blocked;
+                        if (!blocked)
+                        {
+                            // Match DISALLOW_HEIGHT_3_RAMPS exactly: only the first
+                            // excessive corner (TL, TR, BR, BL) is cleared per visit.
+                            // Keep this derived state out of W3E and HiveWE ownership.
+                            W3TerrainMap.Corner? excessive = tlHeight > 1 ? tl : trHeight > 1 ? tr
+                                : brHeight > 1 ? br : blHeight > 1 ? bl : null;
+                            if (excessive != null)
+                            {
+                                excessive.RampSuppressed = true;
+                                invalid = true;
+                            }
+                        }
                         if (!invalid)
                         {
                             string tag = string.Concat(
-                                RampLetter(tlHeight, tl.Ramp), RampLetter(trHeight, tr.Ramp),
-                                RampLetter(brHeight, br.Ramp), RampLetter(blHeight, bl.Ramp));
+                                RampLetter(tlHeight, tl.EffectiveRamp), RampLetter(trHeight, tr.EffectiveRamp),
+                                RampLetter(brHeight, br.EffectiveRamp), RampLetter(blHeight, bl.EffectiveRamp));
                             string directory = _rampModelDirectory(cliffTexture);
                             string modelPath = $"Doodads/Terrain/{directory}/{directory}{tag}0.mdx";
                             if (_modelExists(modelPath))

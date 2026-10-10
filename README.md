@@ -16,8 +16,9 @@ Requires **Godot 4.7**. CI runs the same engine line.
 ## War3 assets
 Resource version and directory requirements: [war3/README.md](war3/README.md).
 The recorded source install is `C:\Warcraft.III.R`;
-the owner recalls **Reforged 2.0.4**, but its exact version/build is pending
-verification. The old `1.32.10+` wording is not a verified compatibility range.
+use **Warcraft III: Reforged 1.32.10.18820** as the resource baseline.
+The installation metadata, game executable and World Editor executable all
+report this version (verified 2026-10-10). Other builds are not covered by this baseline.
 
 See [docs/w3_0.1.md](docs/w3_0.1.md). Requires your own unpacked War3 files for textures/models; maps via `.w3x` (7z) or folder. **JASS not executed.**
 

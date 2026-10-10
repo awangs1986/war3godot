@@ -4,16 +4,17 @@ The binary game data in this directory is ignored by Git.
 
 ## Resource version and provenance
 
-To reproduce the terrain work, use the existing resource exports from the
-recorded Warcraft III: Reforged installation. Do not select an arbitrary
+Use **Warcraft III: Reforged 1.32.10.18820** as the resource baseline.
+To reproduce the terrain work, use resource exports from the recorded installation. Do not select an arbitrary
 newer release based on the previous `1.32.10+` wording: that was not a tested
 compatibility range.
 
 | Item | Recorded value |
 | --- | --- |
 | Source installation | `C:\Warcraft.III.R` |
-| Version | **2.0.4, recalled by the owner on 2026-10-10; not yet verified** |
-| Exact build | Not recorded; pending inspection of the source installation |
+| Version | **1.32.10.18820**, verified on 2026-10-10 |
+| Patch / build | **1.32.10 / 18820** |
+| Linux mount of source installation | `/path/to/Warcraft.III.R` |
 | Local project using these exports | `C:\projects\war3godot` |
 
 The installation path is recorded in `local_paths.json` and is also the
@@ -22,12 +23,19 @@ default `--install` in `tools/casctool/extract_reforged.py` and
 they do not establish its patch version. The extractor's historical `1.32`
 comment is not version-detection output either.
 
-Before declaring a verified resource baseline, record the active version/build
-from the source install's `.build.info` and the product/file version of its
-`Warcraft III.exe`. An updated installation alone does not establish the
-version of older exports: also confirm that `game/` and `reforged/` came from
-that build. The source computer was unreachable when this note was written,
-so **2.0.4 must not yet be described as a verified requirement**.
+Read-only inspection of the source installation found three matching records:
+
+| Evidence | Value |
+| --- | --- |
+| `.build.info`: active `w3` product, branch `cn` | `1.32.10.18820` |
+| `_retail_/x86_64/Warcraft III.exe`: PE FileVersion / ProductVersion | `1.32.10.18820` / `1.32.10.18820` |
+| `_retail_/x86_64/World Editor.exe`: PE FileVersion / ProductVersion | `1.32.10.18820` / `1.32.10.18820` |
+
+CASC Build Key: `aa2b20f1ee251ee642794e21d9a09315`.
+This supersedes the owner's tentative recollection of 2.0.4. The inspection
+identifies the source installation; existing exports have no build manifest,
+so their individual provenance cannot be proved solely from this check.
+When refreshing exports, extract both resource trees from this same build.
 
 ## Required resource directories
 
