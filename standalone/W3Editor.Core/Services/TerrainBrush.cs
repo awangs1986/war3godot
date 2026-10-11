@@ -1,6 +1,5 @@
 // 【测试算法 / 1:1 HiveWE】2026-07-22 — 已封口
 // 实测 Raise @ (32,32) size=4 Δ=0.5：存盘后 4225 角点 GroundHeight 与 HiveWE 全等
-// 见 docs/TERRAIN_BRUSH_HIVEWE_SEAL.md
 // 备份：TerrainBrush.cs.pre_hivewe_test.bak / TerrainBrush.cs.before_1to1.bak
 //       D:\temp\cursor\w3editor\algo_backup\
 using W3Editor.Formats;

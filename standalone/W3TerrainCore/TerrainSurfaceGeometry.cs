@@ -4,7 +4,7 @@ namespace Diablo1Like.W3.Terrain;
 
 /// <summary>
 /// HiveWE ground triangles and Warsmash cliff seam normals, converted to Y-up.
-/// Shared by the editor and Godot; see docs/TERRAIN_CLIFF_SEAMS_2026-10-05.md.
+/// Shared by the editor and Godot.
 /// </summary>
 public static class TerrainSurfaceGeometry
 {

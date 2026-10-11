@@ -57,7 +57,7 @@ root; Godot's asset configuration defaults are recorded in `local_paths.json`.
 **The terrain path still needs classic/SD assets from the Reforged install.**
 Ground transition atlases prefer classic textures/PNG sidecars; replacing them
 with HD `*_diffuse.dds` atlases changes the alpha masks and can reintroduce
-square transitions. See [the HiveWE ground texture seal](../docs/GROUND_TEX_HIVEWE_SEAL.md).
+square transitions.
 HD-only exports are therefore insufficient for reproducing this terrain setup.
 
 ## Map pipeline (Reforged-only)

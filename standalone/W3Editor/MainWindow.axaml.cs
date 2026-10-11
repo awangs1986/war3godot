@@ -1190,7 +1190,7 @@ public partial class MainWindow : Window
     private async void OnAbout(object? sender, RoutedEventArgs e)
     {
         await MessageDialog.Show(this, "关于 war3godot · W3 编辑器",
-            "war3godot · W3 编辑器 — Godot 上的 Warcraft III 地形与地图制作工具（docs/GOALS.md）\n\n" +
+            "war3godot · W3 编辑器 — Godot 上的 Warcraft III 地形与地图制作工具（README.md）\n\n" +
             "已实现：直接打开/保存 d1map；导入 .w3x/.w3m（离线解包）/ 地图目录 / .w3e、地图信息（w3e/w3i/wpm）、\n" +
             "俯视小地图、2D 缩放平移、地形笔刷（HiveWE 全工具集：纹理 / 高度抬升·降低·整平·平滑 /\n" +
             "悬崖升降 1–2 层·同层整平·坡道 / 浅水·深水，2D/3D 视口均可刷）、\n" +
@@ -1745,7 +1745,7 @@ public partial class MainWindow : Window
                 case "import.fbx": owner.ShowModuleInformation("FBX 导入",
                     "FBX 导入能力由 v1 兼容插件注册；请从工具 → 插件选择导入命令。"); break;
                 case "host.plugin": owner.ShowModuleInformation("插件宿主", "v1 IW3EditorPlugin 兼容宿主已启用。"); break;
-                case "assets.pack": owner.ShowModuleInformation("资产包", "资产包格式遵循 docs/ASSET_PACK_SPEC.md。"); break;
+                case "assets.pack": owner.ShowModuleInformation("资产包", "资产包用于组织地形、模型与材质资源。"); break;
                 case "render.pbr": owner.Ensure3DFromModule(actionId); break;
                 case "render.terrain":
                 case "render.water":
