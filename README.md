@@ -5,7 +5,7 @@
 2. Matching Godot terrain editor
 3. Ship a Diablo-like game on that foundation
 
-Details: [docs/GOALS.md](docs/GOALS.md)
+Details: [docs/GOALS.md](docs/GOALS.md) · Development notes: [docs/DEV_RETROSPECTIVE.md](docs/DEV_RETROSPECTIVE.md)
 
 ## Run
 - **W3 sandbox (0.1 main):** `godot --path .` → `scenes/w3_sandbox.tscn`
