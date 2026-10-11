@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://runtime_editor/TerrainRuntimeEditorApp.cs" id="1_app"]
+
+; Runtime terrain editor shell. The whole editor (world, camera, UI, brush)
+; is assembled in TerrainRuntimeEditorApp._Ready(), so this scene stays free
+; of serialized C# resources on purpose.
+[node name="TerrainRuntimeEditor" type="Node"]
+script = ExtResource("1_app")

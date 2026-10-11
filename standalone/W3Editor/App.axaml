@@ -1,0 +1,111 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="W3Editor.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.Resources>
+    <!-- Warcraft-gold accent drives all Fluent checked/selection/slider states. -->
+    <Color x:Key="SystemAccentColor">#E8B84B</Color>
+    <Color x:Key="SystemAccentColorDark1">#C9992F</Color>
+    <Color x:Key="SystemAccentColorDark2">#A87D22</Color>
+    <Color x:Key="SystemAccentColorDark3">#866218</Color>
+    <Color x:Key="SystemAccentColorLight1">#EFC96B</Color>
+    <Color x:Key="SystemAccentColorLight2">#F5D98C</Color>
+    <Color x:Key="SystemAccentColorLight3">#FAE8B0</Color>
+    <!-- Dark text on gold checked toggles. -->
+    <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="#17181C" />
+    <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="#17181C" />
+    <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="#17181C" />
+
+    <SolidColorBrush x:Key="BgWindow" Color="#17181C" />
+    <SolidColorBrush x:Key="BgPanel" Color="#1E2025" />
+    <SolidColorBrush x:Key="BgElevated" Color="#262930" />
+    <SolidColorBrush x:Key="BgInput" Color="#2B2E36" />
+    <SolidColorBrush x:Key="StrokeSoft" Color="#2C2F36" />
+    <SolidColorBrush x:Key="Stroke" Color="#383C45" />
+    <SolidColorBrush x:Key="TextPrimary" Color="#E9EAEE" />
+    <SolidColorBrush x:Key="TextMuted" Color="#9AA0AB" />
+    <SolidColorBrush x:Key="Gold" Color="#E8B84B" />
+    <SolidColorBrush x:Key="GoldSoft" Color="#66E8B84B" />
+    <SolidColorBrush x:Key="ViewportBg" Color="#1A1712" />
+    <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme />
+
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI, sans-serif" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Background" Value="{StaticResource BgWindow}" />
+    </Style>
+
+    <!-- 金色小节标题 -->
+    <Style Selector="TextBlock.sectionTitle">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="2" />
+      <Setter Property="Foreground" Value="{StaticResource Gold}" />
+    </Style>
+    <Style Selector="TextBlock.fieldLabel">
+      <Setter Property="Foreground" Value="{StaticResource TextMuted}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.fieldValue">
+      <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.icon">
+      <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- 卡片式面板 -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{StaticResource BgPanel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource StrokeSoft}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="BoxShadow" Value="0 3 12 0 #55000000" />
+    </Style>
+
+    <Style Selector="Button, ToggleButton">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="11,6" />
+    </Style>
+
+    <!-- 主操作按钮：金底深字 -->
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{StaticResource Gold}" />
+      <Setter Property="Foreground" Value="#17181C" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#EFC96B" />
+      <Setter Property="Foreground" Value="#17181C" />
+    </Style>
+    <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#C9992F" />
+      <Setter Property="Foreground" Value="#17181C" />
+    </Style>
+
+    <!-- 工具栏图标按钮 -->
+    <Style Selector="Button.tool, ToggleButton.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="10,6" />
+    </Style>
+
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="{StaticResource BgInput}" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{StaticResource BgInput}" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Separator">
+      <Setter Property="Background" Value="{StaticResource Stroke}" />
+    </Style>
+  </Application.Styles>
+</Application>

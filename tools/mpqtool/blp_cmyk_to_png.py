@@ -19,7 +19,25 @@ TJPARAM_JPEGWIDTH = 5
 TJPARAM_JPEGHEIGHT = 6
 TJPF_CMYK = 11
 
-_lib = ctypes.CDLL("libturbojpeg.so.0")
+def _load_turbojpeg() -> ctypes.CDLL:
+	"""Load the same TurboJPEG decoder used by HiveWE on Windows or Linux."""
+	here = Path(__file__).resolve()
+	candidates = [
+		here.with_name("turbojpeg.dll"),
+		here.parent.parent / "HiveWE" / "HiveWE 0.10" / "turbojpeg.dll",
+		here.parent.parent / "HiveWE" / "HiveWE.0.10" / "HiveWE 0.10" / "turbojpeg.dll",
+		Path("libturbojpeg.so.0"),
+		Path("turbojpeg.dll"),
+	]
+	for candidate in candidates:
+		try:
+			return ctypes.CDLL(str(candidate))
+		except OSError:
+			continue
+	raise OSError("TurboJPEG library not found; checked: " + ", ".join(map(str, candidates)))
+
+
+_lib = _load_turbojpeg()
 _lib.tj3Init.argtypes = [ctypes.c_int]
 _lib.tj3Init.restype = ctypes.c_void_p
 _lib.tj3Destroy.argtypes = [ctypes.c_void_p]

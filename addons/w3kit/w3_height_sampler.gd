@@ -27,8 +27,9 @@ func sample_y(world_x: float, world_z: float) -> float:
 
 
 func _corner_y(x: int, y: int) -> float:
-	var c = map.get_corner(clampi(x, 0, map.width - 1), clampi(y, 0, map.height - 1))
-	return 0.0 if c == null else c.world_y()
+	var cx := clampi(x, 0, map.width - 1)
+	var cy := clampi(y, 0, map.height - 1)
+	return map.corner_world_pos(cx, cy).y
 
 
 func world_to_tile(world_x: float, world_z: float) -> Vector2i:

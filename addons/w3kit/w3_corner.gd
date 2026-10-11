@@ -14,6 +14,7 @@ var cliff_variation: int = 0
 var ground_variation: int = 0
 var cliff_texture: int = 0
 ## Cliff layer 0..15 — world Y uses (ground_height + layer_height - 2) * TILE_SIZE.
+
 var layer_height: int = 2
 
 

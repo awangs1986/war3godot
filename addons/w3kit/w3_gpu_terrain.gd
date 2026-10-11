@@ -15,10 +15,15 @@ var _shd_tex: ImageTexture
 var _mats: Array = [] # ShaderMaterial per tileset layer
 var _cliff_to_ground: PackedInt32Array = PackedInt32Array()
 var _tileset_extended: PackedByteArray = PackedByteArray()
+var _romp_tiles: PackedByteArray = PackedByteArray()
+var _romp_tiles_x: int = 0
+var _romp_tiles_y: int = 0
 var _mmis: Array = []
 
 ## Per-tileset sub-image count: 0..15 = blend shapes (bitset), 16..31 = extended deco.
 const LAYER_STRIDE := 32
+const ARRAY_BANK_SIZE := 256
+const ARRAY_BANK_COUNT := 3
 ## Sentinel written into tile_data channels for empty slots (matches shader EMPTY).
 const EMPTY_LAYER := 60000.0
 
@@ -33,8 +38,12 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	_shd_tex = null
 	if map == null:
 		return
+	_layer_ids.clear()
+	for ground_id in map.ground_tilesets:
+		_layer_ids.append(str(ground_id))
 	_prepare_blight()
 	_prepare_cliff_to_ground()
+	_prepare_romp_tiles()
 	var corners_x: int = map.width
 	var corners_y: int = map.height
 	var tiles_x: int = map.tile_count_x()
@@ -48,19 +57,21 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 		_shd_tex = W3Shd.blank_texture()
 
 	var height_img := Image.create(corners_x, corners_y, false, Image.FORMAT_RF)
+	# HiveWE terrain.vert: normals read ground_heights (raw corner ground_height,
+	# no cliff layers / ramp lift) while positions read clif_levels. Splitting the
+	# two keeps cliff steps from stamping lit/dark squares onto skirt tiles.
+	var normal_height_img := Image.create(corners_x, corners_y, false, Image.FORMAT_RF)
 	var exists_img := Image.create(tiles_x, tiles_y, false, Image.FORMAT_R8)
 	for y in corners_y:
 		for x in corners_x:
-			var c = map.get_corner(x, y)
-			var hy: float = 0.0 if c == null else c.world_y(W3EMap.TILE_SIZE)
+			var hy: float = map.corner_world_pos(x, y).y
 			height_img.set_pixel(x, y, Color(hy, 0, 0, 1))
-
-	_layer_ids.clear()
-	for i in map.ground_tilesets.size():
-		_layer_ids.append(str(map.ground_tilesets[i]))
+			var c = map.get_corner(x, y)
+			var raw_h: float = 0.0 if c == null else float(c.ground_height) * W3EMap.TILE_SIZE
+			normal_height_img.set_pixel(x, y, Color(raw_h, 0, 0, 1))
 
 	# Slice every tileset atlas into LAYER_STRIDE sub-image layers of one Texture2DArray.
-	var ground_array := _build_ground_array()
+	var ground_arrays := _build_ground_arrays()
 
 	# Cliff / hole existence mask.
 	for y in tiles_y:
@@ -72,6 +83,7 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	var tile_data_img := _build_tile_data(tiles_x, tiles_y)
 
 	var height_tex := ImageTexture.create_from_image(height_img)
+	var normal_height_tex := ImageTexture.create_from_image(normal_height_img)
 	var exists_tex := ImageTexture.create_from_image(exists_img)
 	var tile_data_tex := ImageTexture.create_from_image(tile_data_img)
 
@@ -111,8 +123,12 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	mat.shader = sh
 	mat.set_shader_parameter("tile_data", tile_data_tex)
 	mat.set_shader_parameter("height_tex", height_tex)
+	mat.set_shader_parameter("height_normal_tex", normal_height_tex)
+	mat.set_shader_parameter("height_normal_enabled", true)
 	mat.set_shader_parameter("exists_tex", exists_tex)
-	mat.set_shader_parameter("ground_array", ground_array)
+	mat.set_shader_parameter("ground_array0", ground_arrays[0])
+	mat.set_shader_parameter("ground_array1", ground_arrays[1])
+	mat.set_shader_parameter("ground_array2", ground_arrays[2])
 	mat.set_shader_parameter("shd_tex", _shd_tex)
 	mat.set_shader_parameter("shd_enabled", shd_ok)
 	mat.set_shader_parameter("map_tiles", Vector2i(tiles_x, tiles_y))
@@ -138,7 +154,7 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 
 	_build_height_collision(height_img, tiles_x, tiles_y)
 	print("W3GpuTerrain: unified tilesets=%d layers=%d tiles=%dx%d shd=%s aabb_y=[%.0f,%.0f]" % [
-		_layer_ids.size(), ground_array.get_layers(), tiles_x, tiles_y,
+		_layer_ids.size(), _layer_ids.size() * LAYER_STRIDE, tiles_x, tiles_y,
 		"yes" if shd_ok else "no", y_min, y_max
 	])
 
@@ -161,15 +177,7 @@ func set_flat_inspect(on: bool) -> void:
 	for mat in _mats:
 		if mat == null:
 			continue
-		if on:
-			mat.set_shader_parameter("light_ambient", 1.0)
-			mat.set_shader_parameter("light_scale", 1.0)
-			mat.set_shader_parameter("shd_enabled", false)
-		else:
-			mat.set_shader_parameter("light_ambient", 0.35)
-			mat.set_shader_parameter("light_scale", 1.1)
-			# Keep SHD on when leaving inspect (map may lack shd; shader still samples blank).
-			mat.set_shader_parameter("shd_enabled", true)
+		mat.set_shader_parameter("flat_lighting", on)
 
 
 func set_soft_tint(on: bool) -> void:
@@ -255,12 +263,16 @@ func _tex_to_rgba_image(tex: Texture2D) -> Image:
 const CELL := 64
 
 
-func _build_ground_array() -> Texture2DArray:
+func _build_ground_arrays() -> Array:
 	_tileset_extended = PackedByteArray()
 	var layers: Array[Image] = []
 	for i in _layer_ids.size():
 		var tid: String = _layer_ids[i]
-		var img: Image = textures.get_ground_image(tid) if textures.has_method("get_ground_image") else null
+		var img: Image = null
+		if tid == "__BLIGHT__" and textures.has_method("get_blight_image"):
+			img = textures.get_blight_image(str(map.tileset))
+		elif textures.has_method("get_ground_image"):
+			img = textures.get_ground_image(tid)
 		if img == null:
 			img = _tex_to_rgba_image(_ground_tex(tid))
 		if img != null and img.get_format() != Image.FORMAT_RGBA8:
@@ -269,12 +281,28 @@ func _build_ground_array() -> Texture2DArray:
 		var extended: bool = img != null and img.get_width() >= img.get_height() * 2
 		_tileset_extended.append(1 if extended else 0)
 		for sub in LAYER_STRIDE:
-			layers.append(_slice_cell(img, sub, extended))
-	var arr := Texture2DArray.new()
-	arr.create_from_images(layers)
-	if layers.size() > 256:
-		push_warning("W3GpuTerrain: %d array layers — check GPU max_array_texture_layers" % layers.size())
-	return arr
+			var cell := _slice_cell(img, sub, extended)
+			# HiveWE GroundTexture: GL_LINEAR_MIPMAP_LINEAR with generated mips.
+			cell.generate_mipmaps()
+			layers.append(cell)
+	if layers.size() > ARRAY_BANK_SIZE * ARRAY_BANK_COUNT:
+		push_error("W3GpuTerrain: %d layers exceed supported %d" % [layers.size(), ARRAY_BANK_SIZE * ARRAY_BANK_COUNT])
+	var arrays: Array = []
+	for bank in range(ARRAY_BANK_COUNT):
+		var bank_layers: Array[Image] = []
+		var first := bank * ARRAY_BANK_SIZE
+		var last := mini(first + ARRAY_BANK_SIZE, layers.size())
+		for layer_index in range(first, last):
+			bank_layers.append(layers[layer_index])
+		if bank_layers.is_empty():
+			var transparent := Image.create(CELL, CELL, false, Image.FORMAT_RGBA8)
+			transparent.fill(Color(0, 0, 0, 0))
+			transparent.generate_mipmaps() # array layers must share the mip flag
+			bank_layers.append(transparent)
+		var array := Texture2DArray.new()
+		array.create_from_images(bank_layers)
+		arrays.append(array)
+	return arrays
 
 
 ## Extract sub-image `sub` (0..31) as a 64x64 RGBA8 cell. sub<16 → left 4x4 block;
@@ -305,17 +333,14 @@ func _slice_cell(img: Image, sub: int, extended: bool) -> Image:
 
 
 func _prepare_blight() -> void:
-	_blight_index = -1
-	for i in map.ground_tilesets.size():
-		var tid := str(map.ground_tilesets[i])
-		if tid == "__BLIGHT__" or tid.begins_with("Bl"):
-			_blight_index = i
-			return
-	# Many maps append blight as last tileset.
-	if map.ground_tilesets.size() > 0:
-		var last: String = str(map.ground_tilesets[map.ground_tilesets.size() - 1])
-		if last.contains("Blight") or last == "Blight":
-			_blight_index = map.ground_tilesets.size() - 1
+	# HiveWE/Warsmash append the current tileset's blight atlas after all W3E
+	# ground tiles, giving it the highest texture priority.
+	var existing := _layer_ids.find("__BLIGHT__")
+	if existing >= 0:
+		_blight_index = existing
+		return
+	_blight_index = _layer_ids.size()
+	_layer_ids.append("__BLIGHT__")
 
 
 func _prepare_cliff_to_ground() -> void:
@@ -348,26 +373,55 @@ func _prepare_cliff_to_ground() -> void:
 	print("W3GpuTerrain: cliff_to_ground=%s" % [_cliff_to_ground])
 
 
+## HiveWE stores CliffTrans-owned ground holes separately as `corner_romp`.
+## Precompute that tile mask once; querying ramp transitions per corner while
+## packing every ground tile is needlessly expensive.
+func _prepare_romp_tiles() -> void:
+	_romp_tiles = PackedByteArray()
+	_romp_tiles_x = 0
+	_romp_tiles_y = 0
+	if map == null:
+		return
+	_romp_tiles_x = map.tile_count_x()
+	_romp_tiles_y = map.tile_count_y()
+	_romp_tiles.resize(_romp_tiles_x * _romp_tiles_y)
+	_romp_tiles.fill(0)
+	if not map.has_method("get_ramp_transition"):
+		return
+	for y in range(_romp_tiles_y):
+		for x in range(_romp_tiles_x):
+			var transition: Dictionary = map.get_ramp_transition(x, y)
+			if transition.is_empty():
+				continue
+			_mark_romp_tile(transition.get("source", Vector2i(x, y)))
+			_mark_romp_tile(transition.get("hide_neighbor", Vector2i(-1, -1)))
+
+
+func _mark_romp_tile(tile: Vector2i) -> void:
+	if tile.x < 0 or tile.y < 0 or tile.x >= _romp_tiles_x or tile.y >= _romp_tiles_y:
+		return
+	_romp_tiles[tile.y * _romp_tiles_x + tile.x] = 1
+
+
+func _tile_is_romp(x: int, y: int) -> bool:
+	if x < 0 or y < 0 or x >= _romp_tiles_x or y >= _romp_tiles_y:
+		return false
+	return _romp_tiles[y * _romp_tiles_x + x] != 0
+
+
 func _should_cull_ground(x: int, y: int) -> bool:
 	# HiveWE/Warsmash: cull cliff tiles except full-ramp entrances.
+	# Partial ramps additionally claim their adjacent placement tile (`romp` in
+	# Warsmash), so a displaced CliffTrans model never exposes a square hole.
+	if _tile_is_romp(x, y):
+		return true
 	if not _tile_has_layer_cliff(x, y):
 		return false
 	return not _is_ramp_entrance(x, y)
 
 
 func _is_ramp_entrance(x: int, y: int) -> bool:
-	var c00 = map.get_corner(x, y)
-	var c10 = map.get_corner(x + 1, y)
-	var c01 = map.get_corner(x, y + 1)
-	var c11 = map.get_corner(x + 1, y + 1)
-	if c00 == null or c10 == null or c01 == null or c11 == null:
-		return false
-	if not (c00.ramp and c10.ramp and c01.ramp and c11.ramp):
-		return false
-	# Not a flat same-height ramp (romp).
-	if c00.layer_height == c11.layer_height and c01.layer_height == c10.layer_height:
-		return false
-	return true
+	return map.is_ramp_entrance(x, y)
 
 
 func _remap_variation(raw_variation: int, extended: bool) -> int:
@@ -430,7 +484,10 @@ func _corner_tex(x: int, y: int) -> int:
 	var c = map.get_corner(x, y)
 	if c == null:
 		return 0
-	if _corner_near_cliff(x, y):
+	# HiveWE real_tile_texture: nearby romp always wins; a normal cliff only
+	# replaces a non-ramp corner. Keeping authored ramp textures prevents the
+	# solid-color squares seen around mixed ground transitions.
+	if _corner_near_romp(x, y) or (_corner_near_cliff(x, y) and not bool(c.ramp)):
 		var ct: int = int(c.cliff_texture)
 		if ct == 15:
 			ct = 1
@@ -441,17 +498,29 @@ func _corner_tex(x: int, y: int) -> int:
 	return int(c.ground_texture)
 
 
+func _corner_near_romp(x: int, y: int) -> bool:
+	# HiveWE: OR romp on the four tiles meeting at this corner (tile BLs).
+	for pair in [[x, y], [x - 1, y], [x, y - 1], [x - 1, y - 1]]:
+		if _tile_is_romp(int(pair[0]), int(pair[1])):
+			return true
+	return false
+
+
 func _corner_near_cliff(x: int, y: int) -> bool:
-	for ty in range(y - 1, y + 1):
-		for tx in range(x - 1, x + 1):
-			if tx < 0 or ty < 0 or tx >= map.tile_count_x() or ty >= map.tile_count_y():
-				continue
-			if _tile_has_layer_cliff(tx, ty):
-				return true
+	# HiveWE: OR corner_cliff on the four tiles meeting at this corner.
+	for pair in [[x, y], [x - 1, y], [x, y - 1], [x - 1, y - 1]]:
+		var tx: int = int(pair[0])
+		var ty: int = int(pair[1])
+		if tx < 0 or ty < 0 or tx >= map.tile_count_x() or ty >= map.tile_count_y():
+			continue
+		if _tile_has_layer_cliff(tx, ty):
+			return true
 	return false
 
 
 func _tile_has_layer_cliff(tx: int, ty: int) -> bool:
+	if map != null and map.has_method("tile_has_layer_cliff"):
+		return map.tile_has_layer_cliff(tx, ty)
 	var c00 = map.get_corner(tx, ty)
 	var c10 = map.get_corner(tx + 1, ty)
 	var c01 = map.get_corner(tx, ty + 1)

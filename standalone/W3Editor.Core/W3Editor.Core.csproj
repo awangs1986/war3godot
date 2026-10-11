@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI-free editor core: formats, session/undo, brushes, catalogs, asset
+       decoding. Shared by the Avalonia editor (W3Editor) and headless tools
+       (W3Editor.Mcp). Must never reference Avalonia or GL. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>W3Editor</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pinned to Avalonia 11.2's SkiaSharp line; 3.x+ has breaking native ABI changes. -->
+    <PackageReference Include="SkiaSharp" Version="2.88.9" />
+    <PackageReference Include="War3Net.IO.Mpq" Version="6.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\W3TerrainCore\W3TerrainCore.csproj" />
+    <ProjectReference Include="..\W3Editor.PluginContracts\W3Editor.PluginContracts.csproj" />
+  </ItemGroup>
+
+</Project>

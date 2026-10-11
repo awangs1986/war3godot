@@ -1,0 +1,4 @@
+OK: GL viewport captured
+GL: 320x288 瓦片, 悬崖 2240 块, 水帧 45
+3D 视口就绪（HiveWE 手感）— 右键平移 · Ctrl+右键旋转 · 滚轮缩放 · 方向键平移 · G 网格 · Home 复位 · 左键刷地形（Ctrl+左键反向）
+cam: dist=1094 yaw=3.692 pitch=0.577 target=(11898,-8203)

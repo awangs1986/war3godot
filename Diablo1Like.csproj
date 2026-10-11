@@ -1,0 +1,18 @@
+<Project Sdk="Godot.NET.Sdk/4.7.1">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Diablo1Like</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Standalone Godot projects have their own assemblies. Do not let the
+         SDK's recursive C# glob compile them into the main game assembly. -->
+    <Compile Remove="standalone/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Shared engine-agnostic terrain algorithm core (same library the
+         standalone editor renderer consumes — guarantees 1:1 semantics). -->
+    <ProjectReference Include="standalone/W3TerrainCore/W3TerrainCore.csproj" />
+  </ItemGroup>
+</Project>

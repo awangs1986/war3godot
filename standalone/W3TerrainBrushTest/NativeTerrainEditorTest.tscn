@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://TestTerrainWorld.cs" id="1_world"]
+
+; Deliberately no serialized TerrainDocument sub-resource. Godot's C# editor
+; loads TestTerrainWorld first; it creates and paints this 32x32 test document
+; in _Ready(), avoiding the editor-time Resource -> TerrainDocument cast failure.
+[node name="TerrainWorld" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2048, 256, -2048)
+script = ExtResource("1_world")
+ChunkSize = 16
+ShowTileGrid = true
+CreateDefaultDocument = true

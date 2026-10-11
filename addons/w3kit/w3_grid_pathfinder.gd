@@ -11,6 +11,8 @@ func find_path(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if sampler == null or sampler.map == null:
 		return empty
+	if not sampler.is_tile_walkable(start):
+		return empty
 	if not sampler.is_tile_walkable(goal):
 		return empty
 	if start == goal:
@@ -57,7 +59,8 @@ func find_path(start: Vector2i, goal: Vector2i) -> Array[Vector2i]:
 func _h(a: Vector2i, b: Vector2i) -> int:
 	var dx = absi(a.x - b.x)
 	var dy = absi(a.y - b.y)
-	return 10 * (dx + dy) + 4 * mini(dx, dy)
+	# Octile distance for cardinal cost 10 and diagonal cost 14.
+	return 10 * (dx + dy) - 6 * mini(dx, dy)
 
 
 func _pop_lowest(open: Array[Vector2i], fscore: Dictionary) -> Vector2i:

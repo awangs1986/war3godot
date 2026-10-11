@@ -1,7 +1,9 @@
 extends RefCounted
 const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-## Opens a .w3x/.w3m (via 7z extract) or an already-extracted map folder.
-## JASS (war3map.j / war3map.lua) is ignored — visual resources only.
+## Opens an already-extracted map folder or a raw war3map.w3e file.
+## MPQ archives (.w3x/.w3m) are NOT supported at runtime: extract offline and
+## import to a .res level (see war3/README.md). JASS is ignored — visual
+## resources only.
 
 
 var map_dir: String = ""
@@ -17,7 +19,10 @@ func open(path: String) -> bool:
 		return false
 	if DirAccess.dir_exists_absolute(path):
 		map_dir = path.rstrip("/")
-		return FileAccess.file_exists(map_dir.path_join("war3map.w3e"))
+		if FileAccess.file_exists(map_dir.path_join("war3map.w3e")):
+			return true
+		extract_error = "war3map.w3e not found in folder: %s" % map_dir
+		return false
 	if not FileAccess.file_exists(path):
 		extract_error = "file not found: %s" % path
 		return false
@@ -25,75 +30,20 @@ func open(path: String) -> bool:
 	if ext == "w3e":
 		map_dir = path.get_base_dir()
 		return true
-	if ext == "w3x" or ext == "w3m" or ext == "mpq":
-		return _extract_archive(path)
+	if ext in ["w3x", "w3m", "mpq"]:
+		extract_error = (
+			"MPQ archives are not supported at runtime. "
+			+ "Import the map to a .res level first (war3/README.md)."
+		)
+		return false
 	extract_error = "unsupported map type: %s" % ext
 	return false
 
 
-func _extract_archive(path: String) -> bool:
-	var cache_root = "user://w3x_cache"
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cache_root))
-	var abs_cache = ProjectSettings.globalize_path(cache_root)
-	var key = path.get_file().get_basename() + "_" + str(path.hash())
-	var out_dir = abs_cache.path_join(key)
-	if FileAccess.file_exists(out_dir.path_join("war3map.w3e")):
-		map_dir = out_dir
-		return true
-	DirAccess.make_dir_recursive_absolute(out_dir)
-	var abs_map = path if path.begins_with("/") else ProjectSettings.globalize_path(path)
-	# Prefer project MPQ extractor — .w3x is HM3W+MPQ, not a 7z archive.
-	var tool := ProjectSettings.globalize_path("res://tools/mpqtool/extract_map.cjs")
-	var output: Array = []
-	var err: int = -1
-	if FileAccess.file_exists(tool):
-		err = OS.execute("node", [tool, abs_map, out_dir], output, true)
-		if err == 0 and FileAccess.file_exists(out_dir.path_join("war3map.w3e")):
-			map_dir = out_dir
-			return true
-	# Fallback: 7z (works only for rare zip-wrapped maps).
-	output.clear()
-	err = OS.execute("7z", ["x", "-y", "-o%s" % out_dir, abs_map], output, true)
-	if err != 0:
-		output.clear()
-		err = OS.execute("7za", ["x", "-y", "-o%s" % out_dir, abs_map], output, true)
-	if err != 0:
-		extract_error = "map extract failed (%d): %s" % [err, "\n".join(PackedStringArray(output))]
-		return false
-	if not FileAccess.file_exists(out_dir.path_join("war3map.w3e")):
-		var nested = _find_w3e(out_dir)
-		if not nested.is_empty():
-			map_dir = nested.get_base_dir()
-			return true
-		extract_error = "war3map.w3e not found after extract"
-		return false
-	map_dir = out_dir
-	return true
-
-
-func _find_w3e(root: String) -> String:
-	var stack: Array[String] = [root]
-	while not stack.is_empty():
-		var d: String = stack.pop_back()
-		var da = DirAccess.open(d)
-		if da == null:
-			continue
-		da.list_dir_begin()
-		var fn = da.get_next()
-		while fn != "":
-			if fn != "." and fn != "..":
-				var full = d.path_join(fn)
-				if da.current_is_dir():
-					stack.append(full)
-				elif fn.to_lower() == "war3map.w3e":
-					return full
-			fn = da.get_next()
-		da.list_dir_end()
-	return ""
-
-
 func read_file(rel: String) -> PackedByteArray:
-	var norm = rel.replace("\\", "/")
+	var norm = _safe_relative_path(rel)
+	if norm.is_empty():
+		return PackedByteArray()
 	var full = map_dir.path_join(norm)
 	if not FileAccess.file_exists(full):
 		# Case-insensitive
@@ -107,18 +57,35 @@ func read_file(rel: String) -> PackedByteArray:
 
 
 func has_file(rel: String) -> bool:
-	return not read_file(rel).is_empty() or FileAccess.file_exists(map_dir.path_join(rel.replace("\\", "/")))
+	var norm := _safe_relative_path(rel)
+	return not norm.is_empty() and (not read_file(norm).is_empty() or FileAccess.file_exists(map_dir.path_join(norm)))
 
 
 func resolve_path(rel: String) -> String:
-	var norm = rel.replace("\\", "/")
+	var norm = _safe_relative_path(rel)
+	if norm.is_empty():
+		return ""
 	var full = map_dir.path_join(norm)
 	if FileAccess.file_exists(full):
 		return full
 	var ci = _find_ci(map_dir, norm)
 	if not ci.is_empty():
 		return ci
-	return W3Paths.resolve_path(norm)
+	return W3Paths.resolve_game_path(norm)
+
+
+func _safe_relative_path(rel: String) -> String:
+	var norm := rel.replace("\\", "/").strip_edges()
+	if norm.is_empty() or norm.begins_with("/") or norm.contains(":"):
+		return ""
+	var clean_parts: PackedStringArray = PackedStringArray()
+	for part in norm.split("/", false):
+		if part == "." or part.is_empty():
+			continue
+		if part == "..":
+			return ""
+		clean_parts.append(part)
+	return "/".join(clean_parts)
 
 
 func _find_ci(root: String, rel: String) -> String:

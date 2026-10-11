@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>FbxImportPlugin</RootNamespace>
+    <AssemblyName>FbxImportPlugin</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <!-- Class libraries do not copy NuGet lockfile assemblies by default; Assimp needs them beside the plugin DLL. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- AssimpNet only auto-copies natives for non-deps.json outputs; force for ALC plugin load. -->
+    <ForceCopyNativeAssimp>true</ForceCopyNativeAssimp>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssimpNet" Version="4.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\standalone\W3Editor.PluginContracts\W3Editor.PluginContracts.csproj" />
+  </ItemGroup>
+
+  <!-- Copy plugin + deps into the editor's plugins folder after build. -->
+  <Target Name="CopyToEditorPlugins" AfterTargets="Build">
+    <PropertyGroup>
+      <_EditorPluginsDir>$(MSBuildThisFileDirectory)..\..\standalone\W3Editor\bin\$(Configuration)\net8.0\plugins\FbxImportPlugin</_EditorPluginsDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(_EditorPluginsDir)" Condition="Exists('$(MSBuildThisFileDirectory)..\..\standalone\W3Editor\W3Editor.csproj')" />
+    <ItemGroup>
+      <_CopyItems Include="$(TargetDir)**\*.*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_CopyItems)"
+      DestinationFiles="@(_CopyItems->'$(_EditorPluginsDir)\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(MSBuildThisFileDirectory)..\..\standalone\W3Editor\W3Editor.csproj')" />
+  </Target>
+
+</Project>

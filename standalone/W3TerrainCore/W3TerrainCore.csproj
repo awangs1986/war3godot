@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Diablo1Like.W3.Terrain</RootNamespace>
+    <AssemblyName>W3TerrainCore</AssemblyName>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Description>
+      Engine-agnostic War3 terrain algorithm core shared by the Godot runtime
+      and the standalone editor renderer. This library is the single source of
+      truth for block-map semantics (cliff piece selection, ground blending,
+      ramp heights); neither renderer may fork these rules.
+    </Description>
+  </PropertyGroup>
+
+</Project>
