@@ -10,7 +10,7 @@
 
 ## 核心能力
 
-- **War3 地形**：角点高度、悬崖层高、地表纹理过渡、悬崖、坡道和水面；算法对照 HiveWE / Warsmash。
+- **War3 地形**：角点高度、悬崖层高、地表纹理过渡、悬崖、坡道和水面。
 - **地图编辑**：独立 W3Editor 与 Godot 地形工具，支持笔刷编辑、摆放、撤销重做及地图保存；共享 C# 地形核心。
 - **模型与动画**：加载 MDX 模型、材质和骨骼动画，在 Godot 中使用 `Skeleton3D + Skin` 蒙皮。
 - **材质与光照**：地面、悬崖、水和模型接入 Godot 场景受光；支持 Reforged 模型的 PBR 材质数据。
@@ -76,7 +76,7 @@ dotnet run --project standalone/W3Editor/W3Editor.csproj -c Release
 | `addons/sky_3d/` | 天空与日夜变化 |
 | `scenes/`、`runtime/` | 预览场景和玩法实验 |
 
-C# 工程名 `Diablo1Like.csproj`、程序集与命名空间沿用既有标识，项目展示名与 GitHub 仓库名统一为 `war3godot`。历史报告中的本机目录是当时的实际路径。
+C# 工程名 `Diablo1Like.csproj`、程序集与命名空间沿用既有标识，项目展示名与 GitHub 仓库名统一为 `war3godot`。
 
 ## 开发检查入口
 
@@ -90,13 +90,11 @@ godot --headless --path . res://tools/w3_ground_crosscheck.tscn -- --asset-free
 godot --headless --path . res://tools/w3_regression.tscn
 ```
 
+## 设计参考
+
+本项目的地形渲染与地图编辑设计参考了 [HiveWE](https://github.com/stijnherfst/HiveWE) 和 [Warsmash](https://github.com/Retera/WarsmashModEngine)。
+
 ## 文档
 
-- [当前目标与历史规划](docs/GOALS.md)
+- [资源版本与目录要求](war3/README.md)
 - [世界制作的职责划分](CONTEXT.md)
-- [代码与进度快照](docs/PROGRESS_2026-10-04.md)
-- [坡道算法对照与修复](docs/RAMP_BRUSH_AUDIT_2026-10-05.md)
-- [悬崖接缝修复](docs/TERRAIN_CLIFF_SEAMS_2026-10-05.md)
-- [光照、材质与日夜系统现状](docs/LIGHTING_MATERIAL_AUDIT_2026-10-04.md)
-- [地表纹理归属规则](docs/GROUND_TEX_HIVEWE_SEAL.md)
-- [历史路线图](docs/ROADMAP_P0_P5.md) · [开发回顾](docs/DEV_RETROSPECTIVE.md)

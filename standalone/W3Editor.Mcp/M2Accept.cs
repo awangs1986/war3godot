@@ -5,7 +5,7 @@ using W3Editor.Services;
 namespace W3Editor.Mcp;
 
 /// <summary>
-/// M2 acceptance chain (GOALS.md 中期里程碑 M2)：
+/// M2 acceptance chain:
 ///   copy map → delete one tree → save (v1) → undo → save again (v2)
 ///   → v2 must byte-match the original doo (undo really restored the tree).
 /// Godot/HiveWE then open the v1 folder to confirm the tree is gone.

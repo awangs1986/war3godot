@@ -5,8 +5,7 @@
 
 对照仓（只读）：[`tools/refs/godot-rts-terrain`](../tools/refs/godot-rts-terrain)  
 上游：[shmolyneaux/godot-rts-terrain](https://github.com/shmolyneaux/godot-rts-terrain)  
-产品目标里「编辑器」一层：[GOALS.md](GOALS.md) §3  
-与渲染线关系：本方案服务 **编辑器里程碑**，可与 [ROADMAP_P0_P5.md](ROADMAP_P0_P5.md) **并行**；不替代 P0–P2。
+项目介绍与编辑器能力见 [README](../README.md)。
 
 ```mermaid
 flowchart TB

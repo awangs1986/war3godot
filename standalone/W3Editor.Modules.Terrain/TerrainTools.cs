@@ -10,7 +10,7 @@ namespace W3Editor.Modules.Terrain;
 /// derived at stroke end.
 ///
 /// No terrain math lives here. Changing behavior means changing TerrainBrush
-/// (which is under docs/TERRAIN_BRUSH_HIVEWE_SEAL.md), not this adapter.
+/// rather than this adapter.
 /// </summary>
 public abstract class TerrainToolBase : ITool
 {

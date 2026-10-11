@@ -46,7 +46,7 @@ public sealed class WarsmashTerrainRules
     /// The authored per-corner cliff texture as of the latest RebuildCliffs()
     /// call. Ramp texture propagation lives in a separate render-only array.
     /// HiveWE's sealed real_tile_texture reads the AUTHORED value
-    /// (docs/GROUND_TEX_HIVEWE_SEAL.md) — GroundLayout must use this, not the
+    /// — GroundLayout must use this, not the
     /// effective ramp texture.
     /// </summary>
     public byte AuthoredCliffTexture(int x, int y)

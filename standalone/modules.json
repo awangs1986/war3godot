@@ -82,7 +82,7 @@
     { "id": "bridge.godot",          "enabled": true,  "tier": "Full",     "note": "ours — runtime preview" },
     { "id": "import.fbx",            "enabled": true,  "tier": "Full",     "note": "ours — v2 entry backed by frozen v1 plugin shim" },
     { "id": "host.plugin",           "enabled": true,  "tier": "Full",     "note": "ours — module-gated v1 IW3EditorPlugin shim" },
-    { "id": "assets.pack",           "enabled": true,  "tier": "Full",     "note": "ours — ASSET_PACK_SPEC.md boundary" },
+    { "id": "assets.pack",           "enabled": true,  "tier": "Full",     "note": "ours — asset package boundary" },
     { "id": "render.pbr",            "enabled": true,  "tier": "Full",     "note": "ours — current GL PBR preview boundary" }
   ]
 }
