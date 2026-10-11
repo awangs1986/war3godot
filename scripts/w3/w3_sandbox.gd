@@ -1,18 +1,27 @@
 extends Node3D
-## War3 map preview: free-fly camera + Godot lighting / fog / modern water.
+## War3 0.1 sandbox: Diablo click-move + MDX, or free-fly map preview.
 
 
 @export var map_path: String = ""
 @export var imported_level: Resource
 @export var terrain_only: bool = false
-## Outdoor lighting (sun / fill / fog). Preview tres enables fog for testing.
-@export var lit_settings: Resource = preload("res://addons/w3kit/w3_lit_settings_preview.tres")
+## 0.1 acceptance path available via diablo_play; default OFF so sandbox starts as map preview.
+## Blade Master: /debug → M (keep cam, place) → Warsmash after spawn. Never auto-start.
+@export var diablo_play: bool = false
+## Outdoor lighting. Swap Resource anytime:
+## War3 → w3_lit_settings_preview.tres | UE → ue_style_lit_default.tres | Bistro → bistro_lit_default.tres
+@export var lit_settings: Resource = preload("res://addons/w3kit/ue_style_lit_default.tres")
 ## Hotkey F also toggles fog at runtime.
 @export var preview_fog: bool = true
+## Relative MDX under asset root (0.1 default Footman).
+@export var player_mdx: String = "Units/Human/Footman/Footman.mdx"
 
 @onready var _world = $W3MapWorld
 @onready var _cam: Camera3D = $FreeFlyCamera
 @onready var _hud: Label = $CanvasLayer/Status
+@onready var _loading: Control = $CanvasLayer/LoadingOverlay
+@onready var _load_bar: ProgressBar = $CanvasLayer/LoadingOverlay/Center/VBox/Progress
+@onready var _load_detail: Label = $CanvasLayer/LoadingOverlay/Center/VBox/Detail
 @onready var _console: Control = $CanvasLayer/GotoConsole
 @onready var _console_edit: LineEdit = $CanvasLayer/GotoConsole/VBox/LineEdit
 @onready var _dir_legend: Control = $CanvasLayer/DirLegend
@@ -34,6 +43,11 @@ var _focused_tile: Vector2i = Vector2i(-1, -1)
 var _inspect_mode: bool = false
 var _soft_tint: bool = false
 var _debug_tools: bool = false
+var _scene_ready: bool = false
+var _light_orb: Node3D
+var _bistro_bar: Control
+var _bistro_btns: Dictionary = {} # scenario int -> Button
+var _hotkeys_bar: Label
 var _saved_light_energies: Dictionary = {} # NodePath -> float
 var _hud_timer: float = 0.0
 var _render_scale: float = 0.77
@@ -69,6 +83,18 @@ func _ready() -> void:
 		var iso_cam := _iso.get_node_or_null("Camera3D") as Camera3D
 		if iso_cam:
 			iso_cam.current = false
+	if _cam:
+		_cam.visible = true
+		_cam.set_process(true)
+		_cam.set_process_unhandled_input(true)
+		if _world.map and _cam.has_method("focus_point"):
+			var mid := Vector2i(_world.map.tile_count_x() / 2, _world.map.tile_count_y() / 2)
+			var center: Vector3 = _world.sampler.tile_center_world(mid)
+			var extent: float = float(maxi(_world.map.tile_count_x(), _world.map.tile_count_y())) * 128.0
+			_cam.focus_point(center, extent * 0.65)
+		else:
+			_cam.current = true
+	print("[W3Sandbox] preview fly ON")
 
 	_world.terrain_only = terrain_only
 	# Mobile map units run in the simulation layer (live monsters), not as
@@ -128,8 +154,6 @@ func _ready() -> void:
 	if not terrain_only:
 		_start_game_layer()
 
-	# Terrain exists now — push open-realm light dir into GPU terrain shader.
-	_apply_lighting()
 
 	if _world.map and _cam and _cam.has_method("focus_point"):
 		var mid := Vector2i(_world.map.tile_count_x() / 2, _world.map.tile_count_y() / 2)
@@ -169,8 +193,182 @@ func _process(delta: float) -> void:
 	if not _debug_tools:
 		return
 	if _tile_debug != null and _tile_debug.has_method("is_debug_enabled") and _tile_debug.is_debug_enabled():
-		_tile_debug.update_hover(_cam)
+		var cam := get_viewport().get_camera_3d()
+		if cam == null:
+			cam = _cam
+		_tile_debug.update_hover(cam)
 		_update_hud()
+
+
+func _ensure_light_orb() -> void:
+	if _light_orb != null:
+		if _light_orb.has_method("refresh_world"):
+			_light_orb.refresh_world(_world)
+		return
+	var script: GDScript = load("res://scripts/w3/w3_light_orb.gd")
+	_light_orb = script.new()
+	_light_orb.name = "LightOrbProbe"
+	_light_orb.set("probe_enabled", false)
+	add_child(_light_orb)
+	_light_orb.setup(_cam, _world)
+	# setup may re-apply export default — force off.
+	if _light_orb.has_method("set_probe_enabled"):
+		_light_orb.set_probe_enabled(false)
+	print("[W3Sandbox] light orb OFF (L to enable)")
+
+
+func _ensure_hotkeys_bar() -> void:
+	if _hotkeys_bar != null:
+		_refresh_hotkeys_bar()
+		return
+	var layer := get_node_or_null("CanvasLayer") as CanvasLayer
+	if layer == null:
+		return
+	var label := Label.new()
+	label.name = "HotkeysBar"
+	label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	label.offset_left = 12.0
+	label.offset_top = 4.0
+	label.offset_right = -12.0
+	label.offset_bottom = 40.0
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.95, 0.93, 0.86, 0.95))
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	label.add_theme_constant_override("outline_size", 4)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(label)
+	_hotkeys_bar = label
+	# Keep status below the hotkey strip.
+	if _hud:
+		_hud.offset_top = 44.0
+		_hud.offset_bottom = 200.0
+	_refresh_hotkeys_bar()
+
+
+func _refresh_hotkeys_bar() -> void:
+	if _hotkeys_bar == null:
+		return
+	var fog_on := _settings != null and bool(_settings.get("fog_enabled"))
+	var orb_on := _light_orb != null and bool(_light_orb.get("probe_enabled"))
+	var parts: PackedStringArray = [
+		"F 雾(%s)" % ("开" if fog_on else "关"),
+		"L 点光源(%s)" % ("开" if orb_on else "关"),
+		"` 控制台",
+	]
+	if diablo_play:
+		parts.append("左键点地移动")
+		parts.append("play=ON")
+	else:
+		parts.append_array(PackedStringArray([
+			"WASD 移动",
+			"QE 升降",
+			"右键 视角",
+			"滚轮 缩放",
+		]))
+	if _debug_tools:
+		var sel := -1
+		if _unit_pick != null and _unit_pick.has_method("get_selected_report_id"):
+			sel = int(_unit_pick.get_selected_report_id())
+		parts.append("左键点选单位")
+		parts.append("选中#%s" % (str(sel) if sel >= 0 else "—"))
+		parts.append("N 全部名牌(%s)" % ("开" if _unit_labels_on() else "关"))
+		var grid_on := false
+		if _tile_debug != null and _tile_debug.has_method("is_debug_enabled"):
+			grid_on = bool(_tile_debug.is_debug_enabled())
+		parts.append("G 格子(%s)" % ("开" if grid_on else "关"))
+		parts.append("Tab 检视(%s)" % ("开" if _inspect_mode else "关"))
+		parts.append("H 软染色(%s)" % ("开" if _soft_tint else "关"))
+		var m_on := false
+		if _spawn_pawn != null and _spawn_pawn.has_method("is_control_mode"):
+			m_on = bool(_spawn_pawn.is_control_mode())
+		parts.append("M 剑圣(%s)" % ("指挥" if m_on else "关"))
+	_hotkeys_bar.text = "  ·  ".join(parts)
+
+
+func _ensure_bistro_bar() -> void:
+	if _bistro_bar != null:
+		_refresh_bistro_bar()
+		return
+	var layer := get_node_or_null("CanvasLayer") as CanvasLayer
+	if layer == null:
+		return
+	var panel := PanelContainer.new()
+	panel.name = "BistroLitBar"
+	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	panel.offset_left = -420.0
+	panel.offset_top = 48.0
+	panel.offset_right = -12.0
+	panel.offset_bottom = 92.0
+	layer.add_child(panel)
+	_bistro_bar = panel
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "Bistro lit"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	vbox.add_child(title)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.alignment = BoxContainer.ALIGNMENT_END
+	vbox.add_child(row)
+
+	var labels := [
+		[0, "Noon"],
+		[1, "Afternoon"],
+		[2, "Dusk"],
+		[3, "Night"],
+	]
+	for entry in labels:
+		var sc: int = int(entry[0])
+		var btn := Button.new()
+		btn.text = str(entry[1])
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.pressed.connect(_on_bistro_scenario_pressed.bind(sc))
+		row.add_child(btn)
+		_bistro_btns[sc] = btn
+
+	_refresh_bistro_bar()
+
+
+func _on_bistro_scenario_pressed(scenario: int) -> void:
+	# Switching scenario always activates Bistro lit (independent of War3 / UE).
+	if not _uses_bistro_lit(lit_settings):
+		lit_settings = load("res://addons/w3kit/bistro_lit_default.tres")
+		if lit_settings:
+			lit_settings = lit_settings.duplicate(true)
+	if lit_settings == null:
+		lit_settings = preload("res://addons/w3kit/bistro_lit_settings.gd").new()
+	lit_settings.set("scenario", scenario)
+	lit_settings.set("manual_override", false)
+	# Soft sun shadows for outdoor readability.
+	if _world and lit_settings.get("sun_shadows") == true:
+		_world.preview_no_shadows = false
+	_apply_lighting()
+	_refresh_bistro_bar()
+	_update_hud()
+	print("[W3Sandbox] Bistro scenario=", scenario, " → ", _lit_label(_settings))
+
+
+func _refresh_bistro_bar() -> void:
+	if _bistro_bar == null:
+		return
+	var active := -1
+	if _uses_bistro_lit(_settings if _settings else lit_settings):
+		var s = _settings if _settings else lit_settings
+		active = int(s.get("scenario")) if s.get("scenario") != null else 1
+	for sc in _bistro_btns.keys():
+		var btn: Button = _bistro_btns[sc]
+		if btn == null:
+			continue
+		btn.disabled = false
+		btn.modulate = Color(1.2, 1.15, 0.9) if int(sc) == active else Color(1, 1, 1)
+		btn.button_pressed = int(sc) == active
 
 
 func _input(event: InputEvent) -> void:
@@ -215,8 +413,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				_world.cliffs.set_flat_inspect(true)
 			_update_hud()
 			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_L:
+			_ensure_light_orb()
+			if _light_orb and _light_orb.has_method("toggle"):
+				_light_orb.toggle()
+				var on: bool = bool(_light_orb.get("probe_enabled"))
+				print("[W3Sandbox] light orb=", on)
+			_update_hud()
+			get_viewport().set_input_as_handled()
 		elif not _debug_tools:
 			return
+		elif event.keycode == KEY_N:
+			_toggle_unit_labels()
+			get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_G:
 			_ensure_tile_debug()
 			if _tile_debug != null and _tile_debug.has_method("toggle"):
@@ -234,6 +443,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _world and _world.terrain and _world.terrain.has_method("set_soft_tint"):
 				_world.terrain.set_soft_tint(_soft_tint)
 			print("[W3Sandbox] soft_tint=", _soft_tint)
+			_update_hud()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_M:
+			_ensure_spawn_pawn()
+			if _spawn_pawn != null and _spawn_pawn.has_method("toggle_control_mode"):
+				_spawn_pawn.toggle_control_mode()
+				_sync_cameras_after_blade_mode()
 			_update_hud()
 			get_viewport().set_input_as_handled()
 
@@ -278,6 +494,7 @@ func _set_debug_tools(on: bool) -> void:
 		print("[W3Sandbox] debug ON — G=grid Tab=inspect(无光) H=soft染色 T=剑圣 LMB=移动 `=goto")
 	else:
 		_disable_all_debug_visuals()
+		_sync_cameras_after_blade_mode()
 		print("[W3Sandbox] debug OFF")
 	_update_hud()
 
@@ -315,6 +532,67 @@ func _set_console_open(open: bool) -> void:
 	else:
 		if _console_edit:
 			_console_edit.release_focus()
+		# Restore hidden cursor if light orb is active.
+		if _light_orb != null and bool(_light_orb.get("probe_enabled")):
+			Input.mouse_mode = Input.MOUSE_MODE_HIDDEN
+
+
+func _unit_labels_on() -> bool:
+	if _world == null or _world.batcher == null:
+		return false
+	if _world.batcher.has_method("are_unit_labels_visible"):
+		return bool(_world.batcher.are_unit_labels_visible())
+	return false
+
+
+func _toggle_unit_labels() -> void:
+	if not _debug_tools:
+		return
+	if _world == null or _world.batcher == null:
+		return
+	if not _world.batcher.has_method("set_unit_labels_visible"):
+		return
+	var on := not _unit_labels_on()
+	_world.batcher.set_unit_labels_visible(on)
+	_update_hud()
+
+
+func _focus_unit_report(report_id: int) -> void:
+	if _world == null or _world.batcher == null:
+		return
+	if _debug_tools:
+		_ensure_unit_pick()
+		if _unit_pick != null and _unit_pick.has_method("select_report_id"):
+			if _unit_pick.select_report_id(report_id):
+				var info2: Dictionary = _unit_pick.get_selected_info() if _unit_pick.has_method("get_selected_info") else {}
+				var c2: Vector3 = info2.get("center", Vector3.ZERO)
+				if _cam and _cam.has_method("focus_point") and c2 != Vector3.ZERO:
+					_cam.focus_point(c2, 900.0)
+				_update_hud()
+				return
+	var info: Dictionary = {}
+	if _world.batcher.has_method("get_unit_info"):
+		info = _world.batcher.get_unit_info(report_id)
+	if info.is_empty():
+		print("[W3Sandbox] 无单位 #%d" % report_id)
+		return
+	var center: Vector3 = info.get("center", Vector3.ZERO)
+	print(
+		"[W3Sandbox] #%d  %s  [%s]  cn=%d  owner=%d  pos=(%.0f,%.0f,%.0f)"
+		% [
+			report_id,
+			info.get("unit_name", ""),
+			info.get("unit_id", ""),
+			info.get("creation_number", 0),
+			info.get("player_owner", 0),
+			center.x,
+			center.y,
+			center.z,
+		]
+	)
+	if _cam and _cam.has_method("focus_point"):
+		_cam.focus_point(center, 900.0)
+	_update_hud()
 
 
 func _on_console_submit(text: String) -> void:
@@ -455,12 +733,11 @@ func _ensure_unit_selector() -> void:
 
 
 func _apply_lighting() -> void:
-	var W3War3Lit = preload("res://addons/w3kit/w3_war3_lit.gd")
 	var settings = lit_settings
 	if settings == null or not (settings is Resource) or settings.get_script() == null:
-		settings = load("res://addons/w3kit/w3_lit_settings_preview.tres")
+		settings = load("res://addons/w3kit/ue_style_lit_default.tres")
 	if settings == null:
-		settings = preload("res://addons/w3kit/w3_lit_settings.gd").new()
+		settings = preload("res://addons/w3kit/ue_style_lit_settings.gd").new()
 	_settings = settings.duplicate(true)
 	_settings.weather = _weather
 	_settings.fog_enabled = preview_fog and _fog_on
@@ -468,6 +745,7 @@ func _apply_lighting() -> void:
 
 
 func _update_hud() -> void:
+	_refresh_hotkeys_bar()
 	if _hud == null:
 		return
 	var fog_state := "ON" if (_settings != null and bool(_settings.get("fog_enabled"))) else "OFF"

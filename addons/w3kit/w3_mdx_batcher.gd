@@ -1,6 +1,6 @@
 extends Node3D
-## HiveWE-ish MDX batching: one MultiMesh per (model,geoset).
-## Streams unique MDX loads, frustum-culls instances; no shadows.
+## HiveWE-ish MDX batching: static MultiMesh + animated W3MdxInstance for units/wind.
+## Streams unique MDX loads; no shadows. Doodads + units from DOO files.
 const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
 const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
 const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
@@ -33,9 +33,13 @@ var _model_cache: Dictionary = {}
 var _model_radius_cache: Dictionary = {}
 var _mesh_cache: Dictionary = {}
 var _batches: Dictionary = {}
+var _anim_pending: Array = []
+var _anim_instances: Array = [] ## W3MdxInstance refs
 var _ok: int = 0
 var _miss: int = 0
 var _fail: int = 0
+var _animated: int = 0
+var _anim_active_n: int = 0
 var _flushed: bool = false
 var _frustum_timer: float = 0.0
 var _visible_static: int = 0
@@ -69,6 +73,8 @@ func clear() -> void:
 	_ok = 0
 	_miss = 0
 	_fail = 0
+	_animated = 0
+	_anim_active_n = 0
 	_flushed = false
 	_frustum_timer = 0.0
 	_visible_static = 0
@@ -92,6 +98,9 @@ func get_counts() -> Dictionary:
 		"ok": _ok,
 		"miss": _miss,
 		"fail": _fail,
+		"animated": _animated,
+		"anim_active": _anim_active_n,
+		"anim_pending": _anim_pending.size(),
 		"queued": _queue.size(),
 		"jobs": _model_jobs.size(),
 		"batches": _batches.size(),
@@ -129,12 +138,27 @@ func get_loading_state() -> Dictionary:
 	}
 
 
+func is_streaming_complete() -> bool:
+	## True once static Multimesh is up (scene can show). Anim units may still trickle in.
+	return _flushed
+
+
+func get_stream_progress() -> float:
+	if _flushed:
+		return 1.0
+	if _jobs_total <= 0:
+		return 0.0
+	var done := _jobs_total - _model_jobs.size()
+	return clampf(float(done) / float(_jobs_total) * 0.92, 0.0, 0.92)
+
+
 func enqueue_placement(p) -> void:
 	if p == null:
 		return
 	if p.id in ["sloc", "ncam", "Start"]:
 		return
 	if _queue.size() >= MAX_STATIC:
+		_miss += 1
 		return
 	var appearance_id := str(p.skin_id)
 	if appearance_id.length() != 4 or _contains_nul(appearance_id):
@@ -203,6 +227,7 @@ func begin_streaming() -> void:
 	if _queue.is_empty() and _model_jobs.is_empty():
 		_flushed = true
 		return
+	_flushed = false
 	set_process(true)
 
 
@@ -335,6 +360,13 @@ func _flush_queue_into_batches() -> void:
 		var queued_path := str(queued_item.get("abs_path", ""))
 		placement_counts[queued_path] = int(placement_counts.get(queued_path, 0)) + 1
 	for item in _queue:
+		if bool(item.get("is_unit", false)):
+			ordered.append(item)
+		else:
+			doodads.append(item)
+	ordered.append_array(doodads)
+
+	for item in ordered:
 		var model = _model_cache.get(item["abs_path"], null)
 		if model == null or model.geosets.is_empty():
 			continue
@@ -349,6 +381,8 @@ func _flush_queue_into_batches() -> void:
 			_mesh_cache[bank_key] = _build_geoset_meshes(model, str(item["replaceable"]))
 		var geos: Array = _mesh_cache[bank_key]
 		_ok += 1
+		if is_unit:
+			_spawn_unit_label(item)
 		for gi in geos.size():
 			var gkey: String = "%s#%d" % [bank_key, gi]
 			if not by_gkey.has(gkey):
@@ -543,13 +577,24 @@ func _make_material(model, g, replaceable_tex: String):
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	W3War3Lit.style_model_material(mat)
-	var tex_path := _resolve_tex(model, g, replaceable_tex)
 	var layer_fm := 0
-	if not model.materials.is_empty():
-		var mid = clampi(g.material_id, 0, model.materials.size() - 1)
-		var layers: Array = model.materials[mid]
-		if not layers.is_empty():
-			layer_fm = int(layers[0].filter_mode)
+	var shading_flags := 0
+	var tex_path := ""
+	if layer != null:
+		layer_fm = int(layer.filter_mode)
+		shading_flags = int(layer.shading_flags)
+		tex_path = _resolve_tex_slot(model, int(layer.texture_id), replaceable_tex)
+		mat.albedo_color.a = clampf(float(layer.alpha), 0.0, 1.0)
+	else:
+		tex_path = _resolve_tex(model, g, replaceable_tex)
+		if not model.materials.is_empty():
+			var mid = clampi(g.material_id, 0, model.materials.size() - 1)
+			var layers: Array = model.materials[mid]
+			if not layers.is_empty():
+				layer_fm = int(layers[0].filter_mode)
+				shading_flags = int(layers[0].shading_flags)
+	if (shading_flags & 0x1) != 0:
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var path_l := tex_path.to_lower()
 	var looks_cutout := (
 		path_l.contains("tree") or path_l.contains("leaf") or path_l.contains("canopy") or path_l.contains("plant")
@@ -559,15 +604,20 @@ func _make_material(model, g, replaceable_tex: String):
 	)
 	if not tex_path.is_empty() and textures != null:
 		mat.albedo_texture = textures.get_texture(tex_path)
-		if layer_fm == 1 or looks_cutout:
+		var tex_has_alpha := _texture_has_alpha(mat.albedo_texture)
+		# filter_mode 0 + BLP alpha still needs cutout (unit skins), else black mats.
+		if layer_fm == 1 or looks_cutout or (layer_fm == 0 and tex_has_alpha):
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-			mat.alpha_scissor_threshold = 0.28
+			mat.alpha_scissor_threshold = 0.75 if layer_fm == 1 else 0.05
 		elif layer_fm == 2:
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		elif layer_fm == 3 or layer_fm == 4 or looks_add:
 			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 			mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		elif layer_fm == 5 or layer_fm == 6:
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 	else:
 		mat.albedo_color = Color(0.45, 0.55, 0.35)
 	return mat
@@ -640,7 +690,10 @@ func _resolve_tex(model, g, replaceable_tex: String) -> String:
 	var layers: Array = model.materials[mid]
 	if layers.is_empty():
 		return ""
-	var tid: int = int(layers[0].texture_id)
+	return _resolve_tex_slot(model, int(layers[0].texture_id), replaceable_tex)
+
+
+func _resolve_tex_slot(model, tid: int, replaceable_tex: String) -> String:
 	if tid < 0 or tid >= model.textures.size():
 		return ""
 	var path: String = model.textures[tid]
@@ -649,6 +702,9 @@ func _resolve_tex(model, g, replaceable_tex: String) -> String:
 	var rid := 0
 	if tid < model.texture_replaceable_ids.size():
 		rid = int(model.texture_replaceable_ids[tid])
+	if rid == 1 or rid == 2:
+		var stem := "ReplaceableTextures/TeamColor/TeamColor" if rid == 1 else "ReplaceableTextures/TeamGlow/TeamGlow"
+		return "%s00.blp" % stem
 	if not replaceable_tex.is_empty() and rid >= 31:
 		var rt := replaceable_tex.replace("\\", "/")
 		if not rt.to_lower().ends_with(".blp"):

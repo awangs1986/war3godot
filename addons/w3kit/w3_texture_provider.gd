@@ -4,12 +4,15 @@ const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
 const W3TerrainSlk = preload("res://addons/w3kit/w3_terrain_slk.gd")
 ## Resolves BLP/PNG from map archive first, then game asset root.
 ## Ground tiles use Terrain.slk (tileID → dir/file).
+## Cliff → ground uses CliffTypes.slk groundTile (Warsmash/HiveWE).
 
 
 var _map_dir: String = ""
 var _cache: Dictionary = {}
 var _cliff_ground_by_id: Dictionary = {} # "CLgr" -> "Lgrs" from CliffTypes.slk
 var terrain_slk = W3TerrainSlk.new()
+## cliffID → ground tileID (e.g. CLgr → Lgrs). Empty if SLK missing.
+var _cliff_ground: Dictionary = {}
 
 
 func set_map_dir(path: String) -> void:

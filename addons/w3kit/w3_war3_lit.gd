@@ -5,10 +5,16 @@ extends RefCounted
 
 const W3LitSettingsScript = preload("res://addons/w3kit/w3_lit_settings.gd")
 
+## When true (UE / Bistro), MDX uses PER_PIXEL and receives Directional/Omni.
+## When false (War3), MDX stays UNSHADED — BLP albedo is pre-lit.
+static var models_receive_lights: bool = false
+
 
 static func apply_to_scene(root: Node, settings = null) -> void:
 	if root == null:
 		return
+	# Drop UE-only Sky3D so War3 lit owns WorldEnvironment + DirectionalLight3D again.
+	preload("res://addons/w3kit/ue_style_lit.gd").teardown_ue_only_nodes(root)
 	var s = settings
 	if s == null or not (s is Resource) or s.get_script() == null:
 		s = load("res://addons/w3kit/w3_lit_settings_default.tres")
@@ -19,6 +25,8 @@ static func apply_to_scene(root: Node, settings = null) -> void:
 	_ensure_key_light(root, s)
 	_ensure_fill_light(root, s)
 	_sync_terrain_open_realm_light(root, s)
+	set_models_receive_lights(root, false)
+	_set_terrain_receive_lights(root, false)
 
 
 static func _weather_of(s) -> String:
@@ -89,7 +97,6 @@ static func style_terrain_material(mat: StandardMaterial3D) -> void:
 static func style_model_material(mat: StandardMaterial3D) -> void:
 	if mat == null:
 		return
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
 	mat.metallic = 0.0
 	mat.roughness = 0.82
 	mat.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX

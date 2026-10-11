@@ -29,6 +29,7 @@ uniform bool shd_enabled = true;
 uniform vec3 light_dir = vec3(0.45, 0.85, 0.28);
 uniform float light_ambient = 0.35;
 uniform float light_scale = 1.1;
+uniform vec3 light_color = vec3(1.0, 1.0, 1.0);
 /// Dye overlay alpha by corner bitset: BR=red BL=green TR=blue TL=yellow.
 uniform bool soft_tint = false;
 uniform bool debug_tile_coords = false;

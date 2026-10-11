@@ -5,7 +5,7 @@
 2. Matching Godot terrain editor
 3. Ship a Diablo-like game on that foundation
 
-Details: [docs/GOALS.md](docs/GOALS.md) · Development notes: [docs/DEV_RETROSPECTIVE.md](docs/DEV_RETROSPECTIVE.md)
+Details: [docs/GOALS.md](docs/GOALS.md) · Roadmap: [docs/ROADMAP_P0_P5.md](docs/ROADMAP_P0_P5.md) · Development notes: [docs/DEV_RETROSPECTIVE.md](docs/DEV_RETROSPECTIVE.md)
 
 ## Run
 - **W3 sandbox (0.1 main):** `godot --path .` → `scenes/w3_sandbox.tscn`
@@ -18,6 +18,7 @@ See [docs/w3_0.1.md](docs/w3_0.1.md). Requires your own unpacked War3 files for 
 
 ```bash
 godot --headless --path . -s res://tools/check_asset_root.gd
+godot --headless --path . -s res://tools/w3_regression.gd
 godot --headless --path . -s res://tools/w3_smoke.gd
 godot --headless --path . -s res://tools/w3_regression.gd
 godot --headless --path . -s res://tools/w3_level_runtime_smoke.gd

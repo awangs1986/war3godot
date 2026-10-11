@@ -146,7 +146,7 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 	if off + sz > data.size():
 		return null
 	if content == 0:
-		# Magos/HiveWE: jpeg header at byte 156, mip is JPEG body; often CMYK.
+		# Magos/HiveWE: jpeg header at byte 156, mip is JPEG body; War3 stores BGRA as fake CMYK.
 		var hdr_off := 156
 		if hdr_off + 4 > data.size():
 			return _checker(width, height)
@@ -168,6 +168,7 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 		if img.load_jpg_from_buffer(jpg) == OK:
 			if img.get_width() != int(width) or img.get_height() != int(height):
 				img.resize(width, height)
+			# RGB-only fallback: no real alpha; leave as-is (will look wrong on cutouts).
 			return img
 		return null
 	# Palette
@@ -180,16 +181,20 @@ static func _decode_blp1(data: PackedByteArray) -> Image:
 		var b = data[pal_pos + i * 4]
 		var g = data[pal_pos + i * 4 + 1]
 		var r8 = data[pal_pos + i * 4 + 2]
-		var a = data[pal_pos + i * 4 + 3]
-		if alpha_bits == 0:
-			a = 255
-		colors[i] = Color(r8 / 255.0, g / 255.0, b / 255.0, a / 255.0)
-	var indices = data.slice(off, off + width * height)
+		# Palette A is unused for WC3 direct; real alpha is a separate mip plane.
+		colors[i] = Color(r8 / 255.0, g / 255.0, b / 255.0, 1.0)
+	var pix_n: int = width * height
+	if off + pix_n > data.size():
+		return _checker(width, height)
+	var indices = data.slice(off, off + pix_n)
 	var img2 := Image.create(width, height, false, Image.FORMAT_RGBA8)
 	for y in height:
 		for x in width:
 			var idx = indices[y * width + x]
 			img2.set_pixel(x, y, colors[idx])
+	# Alpha plane follows indices inside the same mip block (War3Net GetAlpha).
+	if alpha_bits > 0:
+		_apply_palette_alpha(img2, data, off + pix_n, int(alpha_bits), width, height)
 	return img2
 
 

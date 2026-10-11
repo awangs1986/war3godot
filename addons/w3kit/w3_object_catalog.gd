@@ -5,6 +5,7 @@ const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
 
 
 var _unit_models: Dictionary = {} # id -> path stem (no required .mdx)
+var _unit_names: Dictionary = {} # id -> display name from UnitUI
 var _doodad_models: Dictionary = {}
 var _destructable_models: Dictionary = {}
 ## Optional replaceable tex stems from DestructableData texFile (id -> path).
@@ -30,6 +31,7 @@ var _resolve_cache: Dictionary = {} # "id|unit|var" -> path
 
 func load_from_roots(map_archive = null) -> void:
 	_unit_models.clear()
+	_unit_names.clear()
 	_doodad_models.clear()
 	_destructable_models.clear()
 	_destructable_tex.clear()
@@ -85,9 +87,18 @@ func load_from_roots(map_archive = null) -> void:
 		_ingest_w3u(map_archive.read_file("war3map.w3d"), false)
 		_ingest_w3u(map_archive.read_file("war3map.w3b"), false)
 	print(
-		"W3ObjectCatalog: units=%d doodads=%d destructables=%d"
-		% [_unit_models.size(), _doodad_models.size(), _destructable_models.size()]
+		"W3ObjectCatalog: units=%d names=%d doodads=%d destructables=%d"
+		% [_unit_models.size(), _unit_names.size(), _doodad_models.size(), _destructable_models.size()]
 	)
+
+
+## Human-readable name for unit fourcc; falls back to the id itself.
+func resolve_unit_name(rawcode: String) -> String:
+	if _unit_names.has(rawcode):
+		var n := str(_unit_names[rawcode]).strip_edges()
+		if not n.is_empty():
+			return n
+	return rawcode
 
 
 ## Returns relative model path (forward slashes). Tries variation suffix then bare file.

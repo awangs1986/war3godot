@@ -3,14 +3,16 @@ const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
 const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
 const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
 const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-## Diablo-style click-to-move on War3 grid terrain with height sticking.
+## Diablo click-to-move using Warsmash-style WPM pathing + A*.
 
 
 const SPEED := 220.0
 const ARRIVE := 16.0
+## Footman-ish collision; odd multiple of 16 → Warsmash corner graph.
+const COLLISION_SIZE := 16.0
 
 var world
-var _path: Array[Vector2i] = []
+var _path: Array[Vector3] = []
 var _path_i: int = 0
 var _mdx
 var _mesh: MeshInstance3D
@@ -77,12 +79,14 @@ func _ensure_visual() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if get_tree().get_first_node_in_group("w3_debug_pawn_control") != null:
+		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		_click_move()
 
 
 func _click_move() -> void:
-	if world == null or world.sampler == null:
+	if world == null or world.pathfinder == null or world.sampler == null:
 		return
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -93,9 +97,15 @@ func _click_move() -> void:
 	var hit = _ray_terrain(from, dir)
 	if hit == null:
 		return
-	var goal_tile: Vector2i = world.sampler.world_to_tile(hit.x, hit.z)
-	var start_tile: Vector2i = world.sampler.world_to_tile(global_position.x, global_position.z)
-	_path = world.pathfinder.find_path(start_tile, goal_tile)
+	if world.pathfinder.has_method("find_world_path"):
+		_path = world.pathfinder.find_world_path(global_position, hit, COLLISION_SIZE)
+	else:
+		var goal_tile: Vector2i = world.sampler.world_to_tile(hit.x, hit.z)
+		var start_tile: Vector2i = world.sampler.world_to_tile(global_position.x, global_position.z)
+		var tiles: Array = world.pathfinder.find_path(start_tile, goal_tile)
+		_path.clear()
+		for t in tiles:
+			_path.append(world.sampler.tile_center_world(t))
 	_path_i = 0
 
 
@@ -120,7 +130,7 @@ func _ray_terrain(from: Vector3, dir: Vector3) -> Variant:
 func _physics_process(delta: float) -> void:
 	var moving := false
 	if _path_i < _path.size() and world and world.sampler:
-		var target: Vector3 = world.sampler.tile_center_world(_path[_path_i])
+		var target: Vector3 = _path[_path_i]
 		var to: Vector3 = target - global_position
 		to.y = 0.0
 		if to.length() <= ARRIVE:
