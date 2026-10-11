@@ -1,6 +1,8 @@
-# Diablo-like World Authoring
+# war3godot — World Authoring
 
-This context defines how commercial Diablo-like levels are divided between static world authoring and runtime gameplay authoring.
+war3godot provides Warcraft III terrain rendering, map editing, model animation,
+and day/night lighting for Godot. The next game's gameplay is still undecided.
+This context separates static world authoring from runtime gameplay authoring.
 
 ## Language
 

@@ -12,7 +12,7 @@
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues for `awangs1986/diablo1like`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for `awangs1986/war3godot`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
