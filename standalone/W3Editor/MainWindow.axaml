@@ -3,7 +3,7 @@
         xmlns:svc="using:W3Editor.Services"
         xmlns:rnd="using:W3Editor.Rendering"
         x:Class="W3Editor.MainWindow"
-        Title="W3 编辑器 — 未打开地图"
+        Title="war3godot · W3 编辑器 — 未打开地图"
         Width="1480" Height="920"
         WindowStartupLocation="CenterScreen">
 

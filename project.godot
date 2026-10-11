@@ -14,8 +14,8 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 [application]
 
-config/name="Diablo1Like"
-config/description="D1-like ARPG + War3 W3E/W3X terrain and MDX (0.1)."
+config/name="war3godot"
+config/description="Warcraft III terrain rendering and map editing for Godot, with MDX animation, material lighting, and a 24-hour day/night cycle."
 run/main_scene="res://scenes/w3_lost_temple_preview.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 config/icon="res://icon.svg"

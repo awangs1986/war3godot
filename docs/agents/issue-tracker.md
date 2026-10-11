@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
+Issues and PRDs for `awangs1986/war3godot` live at https://github.com/awangs1986/war3godot/issues. Use the `gh` CLI for all operations.
 
 ## Conventions
 
@@ -11,7 +11,7 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
 
-Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
+Use `--repo awangs1986/war3godot` for `gh issue` and `gh pr` commands when the checkout also has a Gitea remote. The canonical GitHub clone URL is `https://github.com/awangs1986/war3godot.git`.
 
 ## Pull requests as a triage surface
 

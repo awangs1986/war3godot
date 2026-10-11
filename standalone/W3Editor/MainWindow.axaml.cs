@@ -361,10 +361,10 @@ public partial class MainWindow : Window
     {
         if (!_session.IsOpen)
         {
-            Title = "W3 编辑器 — 未打开地图";
+            Title = "war3godot · W3 编辑器 — 未打开地图";
             return;
         }
-        Title = "W3 编辑器 — " + _session.SourcePath + (_session.IsDirty ? " ●" : "");
+        Title = "war3godot · W3 编辑器 — " + _session.SourcePath + (_session.IsDirty ? " ●" : "");
     }
 
     private void RenderViewport()
@@ -1189,17 +1189,17 @@ public partial class MainWindow : Window
 
     private async void OnAbout(object? sender, RoutedEventArgs e)
     {
-        await MessageDialog.Show(this, "关于 W3 编辑器",
-            "W3 编辑器 — 目标：满足商业暗黑 1 类游戏的地形与交互编辑（docs/GOALS.md）\n\n" +
+        await MessageDialog.Show(this, "关于 war3godot · W3 编辑器",
+            "war3godot · W3 编辑器 — Godot 上的 Warcraft III 地形与地图制作工具（docs/GOALS.md）\n\n" +
             "已实现：直接打开/保存 d1map；导入 .w3x/.w3m（离线解包）/ 地图目录 / .w3e、地图信息（w3e/w3i/wpm）、\n" +
             "俯视小地图、2D 缩放平移、地形笔刷（HiveWE 全工具集：纹理 / 高度抬升·降低·整平·平滑 /\n" +
             "悬崖升降 1–2 层·同层整平·坡道 / 浅水·深水，2D/3D 视口均可刷）、\n" +
             "角点级撤销重做、装饰物与单位统计（doo）、寻路覆盖层（wpm）、\n" +
             "更换图块集（v12 最多 64 图块）、保存 .w3e（自动备份）、另存为 d1map、\n" +
             "内置 GL 3D 视口（Silk.NET，与 Godot 共享 W3TerrainCore 算法核心）、独立预览。\n\n" +
-            "路线：P1 3D 视口交互化 → P2 资产包体系 → P3 自有地图格式 →\n" +
-            "P4 摆放编辑 → P5 交互层+试玩 → P6 联机试玩 → P7 寻路验证 →\n" +
-            "P8 地形表现超越 → P9 量产工具 → P10 触发器（docs/GOALS.md）。");
+            "项目方向：地形编辑与运行时一致性、模型动画、材质光照与 24 小时日夜变化；具体玩法待定。\n" +
+            "资源基线：Warcraft III: Reforged 1.32.10.18820（war3/README.md）。\n" +
+            "项目仓库：https://github.com/awangs1986/war3godot");
     }
 
     private void OnExit(object? sender, RoutedEventArgs e) => Close();

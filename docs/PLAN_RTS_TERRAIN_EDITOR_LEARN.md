@@ -96,7 +96,7 @@ flowchart TB
 
 ---
 
-## 3. 落到 diablo1like（只实现编辑器链）
+## 3. 落到 war3godot（只实现编辑器链）
 
 原则：**对照仓 = 交互教材；生成与存盘 = 我们自己的 `w3kit` / 自有地图 Resource。**
 
