@@ -4,6 +4,12 @@ const W3Corner = preload("res://addons/w3kit/w3_corner.gd")
 ## Parsed war3map.w3e environment.
 
 const TILE_SIZE := 128.0
+const MAX_TILESET_COUNT := 64
+const MAX_CORNER_DIMENSION := 4097
+const MAX_CORNER_COUNT := 4097 * 4097
+const CORNER_BYTES := 7
+
+static var last_error: String = ""
 
 var version: int = 11
 var tileset: String = "L"
@@ -44,41 +50,59 @@ func corner_world_pos(x: int, y: int) -> Vector3:
 
 
 static func load_bytes(data: PackedByteArray):
+	last_error = ""
+	if data.size() < 21:
+		return _parse_error("file is too short (%d bytes)" % data.size())
 	var r = W3BinaryReader.new(data)
 	var magic = r.read_fourcc()
 	if magic != "W3E!":
-		push_error("W3EMap: bad magic '%s'" % magic)
-		return null
+		return _parse_error("bad magic '%s'" % magic)
 	var m = preload("res://addons/w3kit/w3e_map.gd").new()
 	m.version = r.read_i32()
 	m.tileset = r.read_char()
 	m.custom_tileset = r.read_i32() != 0
 	var ng = r.read_i32()
+	if ng < 0 or ng > MAX_TILESET_COUNT or not r.can_read(ng * 4 + 4):
+		return _parse_error("invalid ground tileset count: %d" % ng)
 	for _i in ng:
 		m.ground_tilesets.append(r.read_fourcc())
 	var nc = r.read_i32()
+	if nc < 0 or nc > MAX_TILESET_COUNT or not r.can_read(nc * 4 + 16):
+		return _parse_error("invalid cliff tileset count: %d" % nc)
 	for _i in nc:
 		m.cliff_tilesets.append(r.read_fourcc())
 	m.width = r.read_i32()
 	m.height = r.read_i32()
 	m.center_offset = Vector2(r.read_f32(), r.read_f32())
+	if r.failed:
+		return _parse_error(r.error_message)
+	if m.width < 2 or m.height < 2 or m.width > MAX_CORNER_DIMENSION or m.height > MAX_CORNER_DIMENSION:
+		return _parse_error("invalid corner dimensions: %dx%d" % [m.width, m.height])
+	var corner_count: int = m.width * m.height
+	if corner_count > MAX_CORNER_COUNT or not r.can_read(corner_count * CORNER_BYTES):
+		return _parse_error("truncated or oversized corner grid: %dx%d, remaining=%d" % [m.width, m.height, r.remaining()])
 	m.corners.clear()
 	for y in m.height:
 		var row: Array = []
 		for x in m.width:
 			row.append(_read_corner(r))
 		m.corners.append(row)
+	if r.failed:
+		return _parse_error(r.error_message)
 	return m
+
+
+static func _parse_error(message: String):
+	last_error = message
+	return null
 
 
 static func load_file(path: String):
 	if not FileAccess.file_exists(path):
-		push_error("W3EMap: file missing %s" % path)
-		return null
+		return _parse_error("file missing %s" % path)
 	var f = FileAccess.open(path, FileAccess.READ)
 	if f == null:
-		push_error("W3EMap: cannot open %s" % path)
-		return null
+		return _parse_error("cannot open %s" % path)
 	return load_bytes(f.get_buffer(f.get_length()))
 
 

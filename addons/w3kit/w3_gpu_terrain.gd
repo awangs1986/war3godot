@@ -94,8 +94,7 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	var sh: Shader = load("res://addons/w3kit/shaders/w3_ground_unified.gdshader")
 	var unit_quad := _make_unit_quad()
 
-	# Single MultiMesh: one unit-quad instance per tile. Tile coords come from
-	# INSTANCE_ID in the shader; per-tile layers come from tile_data. No per-layer pass.
+	# Single MultiMesh: one unit-quad instance per tile. Tile coords from INSTANCE_ID.
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = unit_quad
@@ -123,6 +122,7 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	mat.set_shader_parameter("light_dir", Vector3(0.45, 0.85, 0.28).normalized())
 	mat.set_shader_parameter("light_ambient", 0.35)
 	mat.set_shader_parameter("light_scale", 1.1)
+	mat.set_shader_parameter("light_color", Vector3.ONE)
 	mat.set_shader_parameter("soft_tint", false)
 	_mats.append(mat)
 
@@ -131,6 +131,7 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	mmi.multimesh = mm
 	mmi.material_override = mat
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	mmi.custom_aabb = custom_aabb
 	mmi.extra_cull_margin = 256.0
 	add_child(mmi)
@@ -143,17 +144,25 @@ func build(p_map, p_textures = null, p_shd_bytes: PackedByteArray = PackedByteAr
 	])
 
 
-func apply_lighting(light_direction: Vector3, ambient: float = 0.35, scale: float = 1.1) -> void:
+func apply_lighting(light_direction: Vector3, ambient: float = 0.35, scale: float = 1.1, color: Color = Color.WHITE) -> void:
 	var d := light_direction
 	if d.length_squared() < 0.0001:
 		d = Vector3(0.45, 0.85, 0.28)
 	d = d.normalized()
+	var lc := Vector3(color.r, color.g, color.b)
 	for mat in _mats:
 		if mat == null:
 			continue
 		mat.set_shader_parameter("light_dir", d)
 		mat.set_shader_parameter("light_ambient", ambient)
 		mat.set_shader_parameter("light_scale", scale)
+		mat.set_shader_parameter("light_color", lc)
+
+
+## Kept for lit-scheme API compatibility. Ground stays unshaded (MultiMesh-safe);
+## schemes sync sun via apply_lighting(dir, ambient, scale, color) instead.
+func set_receive_scene_lights(_on: bool) -> void:
+	pass
 
 
 ## Flat albedo for blend QA: no Lambert darkening, no SHD.
@@ -164,11 +173,11 @@ func set_flat_inspect(on: bool) -> void:
 		if on:
 			mat.set_shader_parameter("light_ambient", 1.0)
 			mat.set_shader_parameter("light_scale", 1.0)
+			mat.set_shader_parameter("light_color", Vector3.ONE)
 			mat.set_shader_parameter("shd_enabled", false)
 		else:
 			mat.set_shader_parameter("light_ambient", 0.35)
 			mat.set_shader_parameter("light_scale", 1.1)
-			# Keep SHD on when leaving inspect (map may lack shd; shader still samples blank).
 			mat.set_shader_parameter("shd_enabled", true)
 
 
@@ -177,6 +186,19 @@ func set_soft_tint(on: bool) -> void:
 		if mat == null:
 			continue
 		mat.set_shader_parameter("soft_tint", on)
+
+
+## Mouse Omni probe — custom terrain is unshaded, so inject into the ground shader.
+func set_probe_light(enabled: bool, pos: Vector3 = Vector3.ZERO, energy: float = 14.0, range_m: float = 900.0, color: Color = Color(1.0, 0.92, 0.72)) -> void:
+	for mat in _mats:
+		if mat == null:
+			continue
+		mat.set_shader_parameter("probe_enabled", enabled)
+		if enabled:
+			mat.set_shader_parameter("probe_pos", pos)
+			mat.set_shader_parameter("probe_energy", energy)
+			mat.set_shader_parameter("probe_range", range_m)
+			mat.set_shader_parameter("probe_color", Vector3(color.r, color.g, color.b))
 
 
 func _make_unit_quad() -> ArrayMesh:
@@ -320,32 +342,48 @@ func _prepare_blight() -> void:
 
 func _prepare_cliff_to_ground() -> void:
 	_cliff_to_ground = PackedInt32Array()
-	if textures == null or not textures.has_method("get_cliff_ground_tile"):
-		# Fallback: common Felwood CCgr→Cgrs, CCdi→Cdrt style via name match.
-		for i in map.cliff_tilesets.size():
-			var cid := str(map.cliff_tilesets[i])
-			var mapped := 0
-			var want := cid
-			if cid.begins_with("CC"):
-				want = "C" + cid.substr(2)
-			elif cid.length() >= 4:
-				want = cid
-			for gi in map.ground_tilesets.size():
-				if str(map.ground_tilesets[gi]) == want or str(map.ground_tilesets[gi]).begins_with(want.left(3)):
-					mapped = gi
-					break
-			_cliff_to_ground.append(mapped)
-		print("W3GpuTerrain: cliff_to_ground=%s" % [_cliff_to_ground])
-		return
 	for i in map.cliff_tilesets.size():
-		var gid: String = textures.get_cliff_ground_tile(str(map.cliff_tilesets[i]))
+		var cid := str(map.cliff_tilesets[i])
+		var gid := ""
+		if textures != null and textures.has_method("get_cliff_ground_tile"):
+			gid = str(textures.get_cliff_ground_tile(cid))
+		if gid.is_empty():
+			gid = _heuristic_cliff_ground(cid)
 		var mapped := 0
+		var found := false
 		for gi in map.ground_tilesets.size():
 			if str(map.ground_tilesets[gi]) == gid:
 				mapped = gi
+				found = true
 				break
+		if not found and not gid.is_empty():
+			push_warning("W3GpuTerrain: cliff %s groundTile=%s not in map ground list" % [cid, gid])
 		_cliff_to_ground.append(mapped)
-	print("W3GpuTerrain: cliff_to_ground=%s" % [_cliff_to_ground])
+	var pairs: PackedStringArray = PackedStringArray()
+	for i in map.cliff_tilesets.size():
+		pairs.append("%s→%s" % [str(map.cliff_tilesets[i]), str(map.ground_tilesets[_cliff_to_ground[i]])])
+	print("W3GpuTerrain: cliff_to_ground=%s (%s)" % [_cliff_to_ground, ", ".join(pairs)])
+
+
+## Fallback when CliffTypes.slk missing: CLgr→Lgrs, CCgr→Cgrs, CLdi→Ldrt.
+func _heuristic_cliff_ground(cliff_id: String) -> String:
+	if cliff_id.length() < 4:
+		return ""
+	# Felwood-style CC** → C**
+	if cliff_id.begins_with("CC") and cliff_id.length() >= 4:
+		return "C" + cliff_id.substr(2)
+	# Lordaeron-style CL** → L** with dirt/grass naming
+	if cliff_id.begins_with("CL") and cliff_id.length() >= 4:
+		var tail := cliff_id.substr(2) # di, gr, ...
+		if tail == "di":
+			return "Ldrt"
+		if tail == "gr":
+			return "Lgrs"
+		return "L" + tail
+	# Generic: drop leading C if remainder looks like a ground id
+	if cliff_id.begins_with("C") and cliff_id.length() >= 5:
+		return cliff_id.substr(1)
+	return cliff_id
 
 
 func _should_cull_ground(x: int, y: int) -> bool:
@@ -426,29 +464,45 @@ func _build_tile_data(tiles_x: int, tiles_y: int) -> Image:
 	return img
 
 
+## Warsmash realTileTexture: near cliff/romp → that cliff corner's groundTile.
 func _corner_tex(x: int, y: int) -> int:
 	var c = map.get_corner(x, y)
 	if c == null:
 		return 0
-	if _corner_near_cliff(x, y):
-		var ct: int = int(c.cliff_texture)
-		if ct == 15:
-			ct = 1
-		if ct >= 0 and ct < _cliff_to_ground.size():
-			return int(_cliff_to_ground[ct])
+	var cliff_gt := _cliff_ground_from_neighbors(x, y)
+	if cliff_gt >= 0:
+		return cliff_gt
 	if c.blight and _blight_index >= 0:
 		return _blight_index
 	return int(c.ground_texture)
 
 
-func _corner_near_cliff(x: int, y: int) -> bool:
-	for ty in range(y - 1, y + 1):
-		for tx in range(x - 1, x + 1):
-			if tx < 0 or ty < 0 or tx >= map.tile_count_x() or ty >= map.tile_count_y():
+## Port of Warsmash Terrain.realTileTexture neighbor walk.
+## Returns cliff→ground index, or -1 if this corner stays as painted ground.
+func _cliff_ground_from_neighbors(x: int, y: int) -> int:
+	for i in range(-1, 1):
+		for j in range(-1, 1):
+			var cx: int = x + i
+			var cy: int = y + j
+			if cx < 0 or cy < 0 or cx >= map.width or cy >= map.height:
 				continue
-			if _tile_has_layer_cliff(tx, ty):
-				return true
-	return false
+			if cx >= map.tile_count_x() or cy >= map.tile_count_y():
+				continue
+			if not _tile_has_layer_cliff(cx, cy):
+				continue
+			# Ramp entrance: Warsmash break ILoop — do not remap this corner.
+			if _is_ramp_entrance(cx, cy):
+				return -1
+			var cc = map.get_corner(cx, cy)
+			if cc == null:
+				continue
+			var ct: int = int(cc.cliff_texture)
+			# "Number 15 seems to be something" → treat as 1 (Warsmash/HiveWE).
+			if ct == 15:
+				ct = 1
+			if ct >= 0 and ct < _cliff_to_ground.size():
+				return int(_cliff_to_ground[ct])
+	return -1
 
 
 func _tile_has_layer_cliff(tx: int, ty: int) -> bool:

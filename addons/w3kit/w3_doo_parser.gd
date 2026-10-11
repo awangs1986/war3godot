@@ -219,7 +219,7 @@ static func parse_units(data: PackedByteArray) -> Array:
 			r.read_i32() # level
 		if not abil_ok:
 			break
-		# random blob (HiveWE switch on random_type)
+		# random blob (HiveWE switch on random_type — unknown types read nothing)
 		if r.remaining() < 4:
 			break
 		var random_type = r.read_i32()
@@ -240,9 +240,8 @@ static func parse_units(data: PackedByteArray) -> Array:
 					break
 				r.read_bytes(nrand * 8)
 			_:
-				# Unknown — stop this unit rather than desync whole file
-				push_warning("W3DooParser: unknown random_type %d at unit %s" % [random_type, p.id])
-				break
+				# HiveWE: no extra bytes for other values (e.g. -1 / 0xFFFFFFFF)
+				pass
 		if r.remaining() < 12:
 			break
 		r.read_i32() # custom_color

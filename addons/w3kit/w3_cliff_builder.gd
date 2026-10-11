@@ -196,10 +196,18 @@ func _try_spawn_cliff(x: int, y: int) -> void:
 	# Preview: cliffs never cast shadows (HiveWE editor cost avoidance).
 	for ch in inst.get_children():
 		if ch is MeshInstance3D:
-			(ch as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var mi := ch as MeshInstance3D
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			mi.visibility_range_end = 5200.0
+			mi.visibility_range_end_margin = 400.0
+			mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		elif ch is Node:
-			for mi in ch.find_children("*", "MeshInstance3D", true, false):
-				(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for n in ch.find_children("*", "MeshInstance3D", true, false):
+				var mi2 := n as MeshInstance3D
+				mi2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mi2.visibility_range_end = 5200.0
+				mi2.visibility_range_end_margin = 400.0
+				mi2.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	_spawned += 1
 
 
