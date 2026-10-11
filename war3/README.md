@@ -11,17 +11,12 @@ compatibility range.
 
 | Item | Recorded value |
 | --- | --- |
-| Source installation | `C:\Warcraft.III.R` |
 | Version | **1.32.10.18820**, verified on 2026-10-10 |
 | Patch / build | **1.32.10 / 18820** |
-| Linux mount of source installation | `/path/to/Warcraft.III.R` |
-| Local project using these exports | `C:\projects\war3godot` |
 
-The installation path is recorded in `local_paths.json` and is also the
-default `--install` in `tools/casctool/extract_reforged.py` and
-`tools/casctool/extract_model_manifest.py`. These paths identify the source;
-they do not establish its patch version. The extractor's historical `1.32`
-comment is not version-detection output either.
+Installation paths are local configuration. Both CASC extractors require an
+explicit `--install` argument pointing to your installation of this exact build.
+Paths do not establish the patch version; verify the records below before exporting.
 
 Read-only inspection of the source installation found three matching records:
 
@@ -32,8 +27,7 @@ Read-only inspection of the source installation found three matching records:
 | `_retail_/x86_64/World Editor.exe`: PE FileVersion / ProductVersion | `1.32.10.18820` / `1.32.10.18820` |
 
 CASC Build Key: `aa2b20f1ee251ee642794e21d9a09315`.
-This supersedes the owner's tentative recollection of 2.0.4. The inspection
-identifies the source installation; existing exports have no build manifest,
+The inspection identifies the source installation; existing exports have no build manifest,
 so their individual provenance cannot be proved solely from this check.
 When refreshing exports, extract both resource trees from this same build.
 
@@ -47,12 +41,15 @@ When refreshing exports, extract both resource trees from this same build.
 - `maps/LostTemple/source/`: extracted map folder (`war3map.*` files).
 - `maps/LostTemple/lost_temple.res`: project-native imported map resource —
   this is what the game loads.
-- `local_paths.json`: local source and preview paths.
+- `local_paths.example.json`: portable asset and preview defaults.
+- `local_paths.json`: optional local overrides, ignored by Git.
 
 Keep the game-relative directory structure in both exports. Runtime resource
 loading uses extracted files, not the CASC installation directly.
 The standalone editor locates `war3/game` and `war3/reforged` beneath the project
-root; Godot's asset configuration defaults are recorded in `local_paths.json`.
+root; Godot loads `local_paths.json` when present and otherwise uses
+`local_paths.example.json`. Copy the example to `local_paths.json` before adding
+absolute paths for your machine. Keep local overrides out of commits.
 
 **The terrain path still needs classic/SD assets from the Reforged install.**
 Ground transition atlases prefer classic textures/PNG sidecars; replacing them

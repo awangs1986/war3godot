@@ -11,6 +11,7 @@ public partial class W3AssetConfiguration : Node
 {
     public const string ConfigPath = "user://w3_asset_config.cfg";
     public const string LocalPaths = "res://war3/local_paths.json";
+    public const string ExamplePaths = "res://war3/local_paths.example.json";
     private const string Section = "w3";
 
     [Signal]
@@ -149,6 +150,8 @@ public partial class W3AssetConfiguration : Node
     private void ApplyLocalPathsJson()
     {
         string path = ProjectSettings.GlobalizePath(LocalPaths);
+        if (!File.Exists(path))
+            path = ProjectSettings.GlobalizePath(ExamplePaths);
         if (!File.Exists(path))
             return;
         try

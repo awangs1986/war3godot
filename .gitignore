@@ -22,6 +22,7 @@ tools/mpqtool/node_modules/
 !testdata/hivewe_sample/war3map.doo
 !testdata/hivewe_sample/war3mapUnits.doo
 war3/local_paths.json
+!war3/local_paths.example.json
 !war3/README.md
 
 # Local tool dumps / Wine prefixes (never commit)

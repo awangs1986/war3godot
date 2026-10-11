@@ -64,6 +64,10 @@ dotnet run --project standalone/W3Editor/W3Editor.csproj -c Release
 
 详细版本证据、目录和提取说明见 [资源指南](war3/README.md)。
 
+机器路径请配置在 `war3/local_paths.json`（已被 Git 忽略）；可从
+`war3/local_paths.example.json` 复制。未提供本地文件时使用模板中的相对路径。
+CASC 提取工具必须通过 `--install` 显式指定上述版本的安装目录。
+
 ## 项目结构
 
 | 路径 | 职责 |

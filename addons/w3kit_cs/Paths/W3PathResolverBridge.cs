@@ -185,6 +185,8 @@ public partial class W3PathResolverBridge : RefCounted
     {
         string path = ProjectSettings.GlobalizePath("res://war3/local_paths.json");
         if (!File.Exists(path))
+            path = ProjectSettings.GlobalizePath("res://war3/local_paths.example.json");
+        if (!File.Exists(path))
             return null;
 
         try

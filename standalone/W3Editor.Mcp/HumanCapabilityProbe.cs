@@ -14,9 +14,9 @@ internal static class HumanCapabilityProbe
 {
     public static int Run(string[] args)
     {
-        string outJson = args.Length >= 2
+        string outJson = Path.GetFullPath(args.Length >= 2
             ? args[1]
-            : @"D:\temp\cursor\w3editor\human_probe_w3editor.json";
+            : Path.Combine(Path.GetTempPath(), "war3godot", "human_probe_w3editor.json"));
         Directory.CreateDirectory(Path.GetDirectoryName(outJson)!);
 
         var results = new List<object>();
@@ -28,7 +28,7 @@ internal static class HumanCapabilityProbe
             AppContext.BaseDirectory, "..", "..", "..", "..", "W3Editor", "MainWindow.axaml");
         axaml = Path.GetFullPath(axaml);
         if (!File.Exists(axaml))
-            axaml = @"C:\projects\war3godot\standalone\W3Editor\MainWindow.axaml";
+            axaml = Path.Combine(Directory.GetCurrentDirectory(), "standalone", "W3Editor", "MainWindow.axaml");
         string axamlText = File.ReadAllText(axaml);
         Rec("ui.menu.pathing_mode",
             axamlText.Contains("Header=\"寻路\" IsEnabled=\"False\"") ? "MISSING_IN_UI" : "UNKNOWN",

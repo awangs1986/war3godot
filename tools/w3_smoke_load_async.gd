@@ -7,7 +7,12 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	var map_path := "/path/to/Warcraft.III.R/Maps/(4)LostTemple.w3m"
+	var args := OS.get_cmdline_user_args()
+	var map_path: String = args[0] if not args.is_empty() else OS.get_environment("WAR3_MAP_PATH")
+	if map_path.is_empty():
+		push_error("Provide a map path after -- or set WAR3_MAP_PATH.")
+		quit(1)
+		return
 	if not FileAccess.file_exists(map_path):
 		push_error("map missing: " + map_path)
 		quit(1)

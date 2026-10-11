@@ -1,0 +1,5 @@
+{
+  "asset_root": "res://war3/game",
+  "reforged_cache_root": "res://war3/reforged",
+  "default_map_path": "res://war3/maps/LostTemple/lost_temple.res"
+}

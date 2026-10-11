@@ -153,7 +153,7 @@ def main() -> int:
 	parser = argparse.ArgumentParser()
 	parser.add_argument("relative_path", nargs="?")
 	parser.add_argument("output")
-	parser.add_argument("--install", default=r"C:\Warcraft.III.R")
+	parser.add_argument("--install", required=True, help="Path to the Warcraft III: Reforged 1.32.10.18820 installation")
 	parser.add_argument("--dll-dir", default=r"tools\HiveWE\HiveWE 0.10")
 	parser.add_argument("--tileset", default="L")
 	parser.add_argument("--bundle", action="store_true", help="extract an MDX and every referenced HD texture")
