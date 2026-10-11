@@ -1,8 +1,8 @@
-extends SceneTree
+﻿extends SceneTree
 ## Regression check: opaque PNG sidecars must win when a CMYK BLP JPEG cannot
 ## be converted on the current platform. Cliff1 is a real Lost Temple asset.
 
-const W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
+const W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
 
 
 func _init() -> void:

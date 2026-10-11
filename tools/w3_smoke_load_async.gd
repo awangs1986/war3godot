@@ -12,7 +12,7 @@ func _run() -> void:
 		push_error("map missing: " + map_path)
 		quit(1)
 		return
-	var world_script = load("res://addons/w3kit/w3_map_world.gd")
+	var world_script = load("res://addons/w3kit_cs/World/W3MapWorld.cs")
 	var world = world_script.new()
 	root.add_child(world)
 	world.terrain_only = false

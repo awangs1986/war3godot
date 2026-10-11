@@ -25,17 +25,18 @@ func _run() -> void:
 			p.x, p.y, c.ground_texture, c.ground_variation, c.cliff_texture, c.layer_height,
 			level.corner_flags[level.width * p.y + p.x], c.ground_height, c.water_height,
 		])
-	var provider = preload("res://addons/w3kit/w3_texture_provider.gd").new()
-	provider.load_terrain_slk()
+	var provider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs").new()
+	provider.load_terrain_slk("")
 	var used: Dictionary = {}
 	for p in [Vector2i(tx, ty), Vector2i(tx + 1, ty), Vector2i(tx, ty + 1), Vector2i(tx + 1, ty + 1)]:
 		var c = level.get_corner(p.x, p.y)
 		var id := str(level.ground_tilesets[clampi(c.ground_texture, 0, level.ground_tilesets.size() - 1)])
 		used[id] = provider.terrain_slk.resolve_blp_rel(id)
+	var resolver = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs").new() # C# 桥的 resolve_path 是实例方法
 	for id in used.keys():
 		var rel: String = used[id]
-		print(" texture id=%s rel=%s resolved=%s" % [id, rel, preload("res://addons/w3kit/w3_paths.gd").resolve_path(rel)])
-	var terrain = preload("res://addons/w3kit/w3_gpu_terrain.gd").new()
+		print(" texture id=%s rel=%s resolved=%s" % [id, rel, resolver.resolve_path(rel)])
+	var terrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs").new()
 	terrain.map = level
 	terrain.textures = provider
 	terrain._prepare_cliff_to_ground()

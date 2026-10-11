@@ -1,7 +1,7 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
 
 
 func _initialize() -> void:
@@ -12,7 +12,7 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var rel := str(args[0]) if not args.is_empty() else "units/creeps/GnollArcher/GnollArcher.mdx"
 	var started := Time.get_ticks_msec()
-	var abs_path := rel if rel.is_absolute_path() else W3Paths.resolve_path(rel)
+	var abs_path := rel if rel.is_absolute_path() else W3Paths.new().resolve_path(rel)
 	printerr("MDX_PROBE resolving_ms=%d path=%s" % [Time.get_ticks_msec() - started, abs_path])
 	var model = W3MdxModel.load_file(abs_path)
 	printerr("MDX_PROBE loaded_ms=%d model=%s" % [Time.get_ticks_msec() - started, model != null])

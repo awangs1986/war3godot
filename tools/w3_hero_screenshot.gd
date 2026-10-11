@@ -13,7 +13,7 @@ var _wait := 0
 func _initialize() -> void:
 	root.mode = Window.MODE_WINDOWED
 	root.size = Vector2i(1280, 720)
-	var World = load("res://addons/w3kit/w3_map_world.gd")
+	var World = load("res://addons/w3kit_cs/World/W3MapWorld.cs")
 	_world = World.new()
 	_world.terrain_only = true
 	root.add_child(_world)
@@ -35,7 +35,7 @@ func _setup() -> void:
 
 	var mid := Vector2i(_world.map.tile_count_x() / 2, _world.map.tile_count_y() / 2)
 	var spawn: Vector3 = _world.sampler.tile_center_world(mid)
-	var GameScript = load("res://scripts/game/w3_game.gd")
+	var GameScript = load("res://addons/w3kit_cs/Game/W3GameRuntime.cs")
 	_game = GameScript.new()
 	root.add_child(_game)
 	if not _game.setup(_world) or _game.spawn_player(spawn) == null:

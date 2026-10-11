@@ -65,6 +65,7 @@ public static class FbxPipeline
             ? Path.Combine(targetRoot, modelId)
             : Path.Combine(targetRoot, "imported", modelId);
         outputDir = EnsureUniqueDir(outputDir, ref modelId, ownership, targetRoot);
+        RequireUnderRoot(outputDir, targetRoot);
 
         using var context = new AssimpContext();
         context.SetConfig(new NormalSmoothingAngleConfig(66f));
@@ -95,7 +96,8 @@ public static class FbxPipeline
             throw new InvalidDataException("模型网格为空");
 
         // Assimp typically: +X right, +Y up, +Z toward camera.
-        // Editor / d1map: +X east, +Y north, +Z up → (x, y_up, z) → (x, z, y_up).
+        // Editor / d1map: +X east, +Y north, +Z up. Proper rotation about X:
+        // (x, y_up, z) → (x, -z, y_up); a plain swap would mirror the mesh.
         SwapAssimpYUpToEditorZUp(positions, normals);
 
         float longest = LongestEdge(positions);
@@ -181,14 +183,40 @@ public static class FbxPipeline
         return candidate;
     }
 
+    /// <summary>Windows reserved device names that are invalid directory names.</summary>
+    private static readonly HashSet<string> ReservedNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
+
     private static string SanitizeModelId(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             name = "model";
         foreach (char c in Path.GetInvalidFileNameChars())
             name = name.Replace(c, '_');
-        name = name.Trim().Replace(' ', '_');
-        return string.IsNullOrWhiteSpace(name) ? "model" : name;
+        // '.' is a valid filename char, so "...fbx" would otherwise yield the
+        // id ".." and escape the designated root via Path.Combine.
+        name = name.Trim().Trim('.').Replace(' ', '_');
+        if (string.IsNullOrWhiteSpace(name) || ReservedNames.Contains(name))
+            name = "model";
+        return name;
+    }
+
+    /// <summary>
+    /// Rejects an output directory that resolved outside the designated root —
+    /// the last line of defense against sanitizer gaps and hostile file names.
+    /// </summary>
+    private static void RequireUnderRoot(string outputDir, string root)
+    {
+        string full = Path.GetFullPath(outputDir);
+        string rootFull = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"输出目录越界：{outputDir} 不在 {root} 内");
     }
 
     private static void CollectMeshes(
@@ -200,7 +228,10 @@ public static class FbxPipeline
         List<float> uvs,
         List<int> indices)
     {
-        Matrix4x4 transform = parent * node.Transform;
+        // AssimpNet's operator* is row-vector (transposed) while TransformPoint
+        // applies matrices column-vector style (translation in A4/B4/C4), so the
+        // child-then-parent composition must be written child * parent here.
+        Matrix4x4 transform = node.Transform * parent;
         Matrix4x4 normalMatrix = transform;
         normalMatrix.Inverse();
         normalMatrix.Transpose();
@@ -292,19 +323,20 @@ public static class FbxPipeline
 
     private static void SwapAssimpYUpToEditorZUp(List<float> positions, List<float> normals)
     {
+        // Proper +90° rotation about X: (x, y, z) -> (x, -z, y). A plain axis
+        // swap (x, z, y) has determinant -1 — it mirrors the model and flips
+        // triangle winding, which persisted wrong geometry to mesh.bin.
         for (int i = 0; i + 2 < positions.Count; i += 3)
         {
-            float x = positions[i], y = positions[i + 1], z = positions[i + 2];
-            positions[i] = x;
-            positions[i + 1] = z;
+            float y = positions[i + 1], z = positions[i + 2];
+            positions[i + 1] = -z;
             positions[i + 2] = y;
         }
 
         for (int i = 0; i + 2 < normals.Count; i += 3)
         {
-            float x = normals[i], y = normals[i + 1], z = normals[i + 2];
-            normals[i] = x;
-            normals[i + 1] = z;
+            float y = normals[i + 1], z = normals[i + 2];
+            normals[i + 1] = -z;
             normals[i + 2] = y;
         }
     }

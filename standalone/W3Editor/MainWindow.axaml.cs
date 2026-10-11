@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Reflection;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -6,7 +8,9 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using W3Editor.Dialogs;
+using W3Editor.Contracts;
 using W3Editor.Formats;
+using W3Editor.Kernel;
 using W3Editor.PluginContracts;
 using W3Editor.Plugins;
 using W3Editor.Rendering;
@@ -17,6 +21,9 @@ namespace W3Editor;
 public partial class MainWindow : Window
 {
     private readonly MapSession _session = new();
+    private readonly ModuleHost _moduleHost = new();
+    private readonly Dictionary<string, (MenuItem Item, CommandDescriptor Command)> _moduleCommandItems = new(StringComparer.Ordinal);
+    private ModuleLoadReport? _moduleLoadReport;
     /// <summary>Current map session — exposed for <see cref="EditorPluginContext"/>.</summary>
     internal MapSession Session => _session;
     private readonly BrushSettings _brush = new();
@@ -29,9 +36,11 @@ public partial class MainWindow : Window
     private bool _strokeErase;
     private bool _strokeApplied;
     private (int X, int Y) _strokeAnchor = (-1, -1); // Shift 直线笔刷锚点
+    private (float X, float Y) _rampStrokeAnchor = (-1, -1);
     private readonly Stopwatch _strokeClock = new();
     private long _lastApplyTimestamp;
     private bool _leftSidebarVisible = true;
+    private readonly VisibilityOptions _visibility = VisibilityOptionsStore.Load();
 
     /// <summary>Shift line brush: constrain the stamp to the dominant axis from the stroke anchor.</summary>
     private (int X, int Y) ConstrainToLine(int cx, int cy, bool shift)
@@ -43,9 +52,19 @@ public partial class MainWindow : Window
             : (_strokeAnchor.X, cy);
     }
 
+    private (float X, float Y) ConstrainRampToLine(float cx, float cy, bool shift)
+    {
+        if (!shift || _rampStrokeAnchor.X < 0) return (cx, cy);
+        return MathF.Abs(cx - _rampStrokeAnchor.X) >= MathF.Abs(cy - _rampStrokeAnchor.Y)
+            ? (cx, _rampStrokeAnchor.Y) : (_rampStrokeAnchor.X, cy);
+    }
+
     public MainWindow()
     {
         InitializeComponent();
+        // Panel descriptors must materialize their controls before the Shell
+        // wires input events. This is composition, not business ownership.
+        LoadEditorModules();
         Opened += OnWindowOpened;
         DoodadSearch.TextChanged += (_, _) => RefreshDoodadList();
         UnitSearch.TextChanged += (_, _) => RefreshUnitList();
@@ -64,6 +83,11 @@ public partial class MainWindow : Window
         {
             if (e.Property == Slider.ValueProperty)
                 LblScatterRadius.Text = SliderScatterRadius.Value < 0.5 ? "关（沿轨迹）" : $"{SliderScatterRadius.Value:0} 格";
+        };
+        SliderPathingRadius.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Slider.ValueProperty)
+                LblPathingRadius.Text = $"{(int)SliderPathingRadius.Value} 格";
         };
 
         SliderSize.PropertyChanged += (_, e) =>
@@ -104,6 +128,7 @@ public partial class MainWindow : Window
             BtnView3D.IsChecked = false;
             StatusLeft.Text = "GL 渲染器初始化失败：" + message;
         };
+        ApplyVisibilityOptions();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -114,9 +139,9 @@ public partial class MainWindow : Window
             {
                 case Key.Z: OnUndo(null, null!); e.Handled = true; return;
                 case Key.Y: OnRedo(null, null!); e.Handled = true; return;
-                case Key.S: OnSave(null, null!); e.Handled = true; return;
-                case Key.O: OnOpenMap(null, null!); e.Handled = true; return;
-                case Key.N: OnNewMap(null, null!); e.Handled = true; return;
+                case Key.S when HasModuleCommand("op.save"): OnSave(null, null!); e.Handled = true; return;
+                case Key.O when HasModuleCommand("op.open"): OnOpenMap(null, null!); e.Handled = true; return;
+                case Key.N when HasModuleCommand("op.newmap"): OnNewMap(null, null!); e.Handled = true; return;
             }
         }
         // Placement-mode keys (Space/Esc/Delete/Ctrl+C/V/A/+/-/V) come first.
@@ -128,6 +153,18 @@ public partial class MainWindow : Window
         // 3D camera keys (arrows / G / Home) work regardless of which control has focus.
         if (!e.Handled && GlView.IsVisible)
             GlView.ForwardKeyDown(e);
+        // The 2D terrain canvas has no frame loop, so key repeat supplies
+        // continuous WASD/arrow panning while a brush remains active.
+        if (!e.Handled && !GlView.IsVisible && e.Source is not TextBox
+            && e.Key is Key.W or Key.A or Key.S or Key.D or Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            const double step = 48.0;
+            double dx = e.Key is Key.A or Key.Left ? step : e.Key is Key.D or Key.Right ? -step : 0.0;
+            double dy = e.Key is Key.W or Key.Up ? step : e.Key is Key.S or Key.Down ? -step : 0.0;
+            _pan2d = new Avalonia.Point(_pan2d.X + dx, _pan2d.Y + dy);
+            RenderViewport();
+            e.Handled = true;
+        }
         base.OnKeyDown(e);
     }
 
@@ -150,6 +187,7 @@ public partial class MainWindow : Window
         try
         {
             var folder = _session.CreateNew(dlg.MapName, dlg.WidthTiles, dlg.HeightTiles, dlg.Settings);
+            OpenModuleDocumentFromSession();
             _history.Clear();
             GlView.Scene.ClearPluginPreview();
             RefreshFromSession();
@@ -216,6 +254,7 @@ public partial class MainWindow : Window
             return;
         }
         _history.Clear();
+        OpenModuleDocumentFromSession();
         GlView.Scene.ClearPluginPreview();
         RefreshFromSession();
         Refresh3DIfActive();
@@ -242,7 +281,7 @@ public partial class MainWindow : Window
         MenuSave.Header = _session.IsNativeFormat ? "保存 d1map" : "保存 War3 地图";
         ToolTip.SetTip(BtnSave, _session.IsNativeFormat
             ? "保存 d1map"
-            : "保存 w3e 与摆放文件（首次保存自动备份 .bak）");
+            : "保存 w3e 与摆放文件（每次保存刷新 .bak 备份）");
 
         InfoSource.Text = _session.SourcePath;
         InfoVersion.Text = map.Version.ToString() + (map.Version >= 12 ? "（HiveWE/重制 8 字节角点）" : "（经典 7 字节角点）");
@@ -295,9 +334,18 @@ public partial class MainWindow : Window
         ChkNoWalk.IsEnabled = _session.Pathing != null;
         ChkNoFly.IsEnabled = _session.Pathing != null;
         ChkNoBuild.IsEnabled = _session.Pathing != null;
+        SliderPathingRadius.IsEnabled = !_session.IsNativeFormat;
+        BtnModePathing.IsEnabled = !_session.IsNativeFormat;
+        BtnModeRegions.IsEnabled = _session.FormatKind == Services.MapFormatKind.War3Folder;
         PathingHint.Text = _session.Pathing != null
             ? $"已加载 wpm：{_session.Pathing.Width}×{_session.Pathing.Height} 格。"
-            : "该地图没有 war3map.wpm。";
+            : _session.IsNativeFormat
+                ? "d1map 当前不承载 War3 WPM 数据。"
+                : "该地图没有 war3map.wpm；首次绘制时自动创建。";
+        RefreshRegionsUi();
+        GlView.Scene.Regions = _session.Regions?.Regions is { } loadedRegions
+            ? loadedRegions
+            : Array.Empty<W3RegionRecord>();
 
         RebuildTexturePalette();
 
@@ -333,8 +381,14 @@ public partial class MainWindow : Window
             Units = _session.Units,
             ShowDoodads = MenuOverlayDoodads.IsChecked,
             ShowUnits = MenuOverlayUnits.IsChecked,
+            Regions = _session.Regions?.Regions,
+            ShowRegions = _mode == EditMode.Regions && _visibility.Regions,
         };
         ViewportImage.Source = MinimapRenderer.Render(map, _viewScale, overlays);
+        GlView.Scene.ShowRegions = _mode == EditMode.Regions && _visibility.Regions;
+        GlView.Scene.Regions = _session.Regions?.Regions is { } regions
+            ? regions
+            : Array.Empty<W3RegionRecord>();
 
         var parts = new List<string>
         {
@@ -343,6 +397,7 @@ public partial class MainWindow : Window
         if (overlays.ShowDoodads) parts.Add($"装饰物 {_session.Doodads.Count}");
         if (overlays.ShowUnits) parts.Add($"单位 {_session.Units.Count}");
         if (overlays.ShowNoWalk || overlays.ShowNoFly || overlays.ShowNoBuild) parts.Add("寻路覆盖");
+        if (overlays.ShowRegions) parts.Add($"区域 {_session.Regions?.Regions.Count ?? 0}");
         if (_brush.Op != BrushOp.None) parts.Add(BrushOpName(_brush.Op));
         ViewportBadgeText.Text = string.Join(" · ", parts);
     }
@@ -488,9 +543,36 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private bool TryPointToCorner(Avalonia.Point posImage, out int cx, out int cy)
+    private bool TryPointToCorner(Avalonia.Point position, out int cx, out int cy)
     {
         cx = cy = -1;
+        if (!TryPointToMapPixel(position, out double px, out double py)) return false;
+        // Preserve the original double-precision cell selection for other tools.
+        cx = (int)(px / _viewScale);
+        cy = _session.Map!.Height - 1 - (int)(py / _viewScale);
+        return cx >= 0 && cy >= 0 && cx < _session.Map.Width && cy < _session.Map.Height;
+    }
+
+    private bool TryPointToBrushPosition(Avalonia.Point position, out float cx, out float cy)
+    {
+        if (_brush.Op == BrushOp.Ramp) return TryPointToCorner(position, out cx, out cy);
+        bool found = TryPointToCorner(position, out int x, out int y);
+        cx = x; cy = y;
+        return found;
+    }
+
+    private bool TryPointToCorner(Avalonia.Point position, out float cx, out float cy)
+    {
+        cx = cy = -1;
+        if (!TryPointToMapPixel(position, out double px, out double py)) return false;
+        cx = (float)(px / _viewScale);
+        cy = (float)(_session.Map!.Height - 1 - py / _viewScale);
+        return true;
+    }
+
+    private bool TryPointToMapPixel(Avalonia.Point posImage, out double px, out double py)
+    {
+        px = py = -1;
         var map = _session.Map;
         if (map == null || ViewportImage.Source is not WriteableBitmap bmp) return false;
         double bw = ViewportImage.Bounds.Width, bh = ViewportImage.Bounds.Height;
@@ -498,12 +580,9 @@ public partial class MainWindow : Window
         if (bw <= 0 || bh <= 0 || pw <= 0 || ph <= 0) return false;
         double fit = Math.Min(bw / pw, bh / ph);
         double offX = (bw - pw * fit) / 2, offY = (bh - ph * fit) / 2;
-        double px = (posImage.X - offX) / fit;
-        double py = (posImage.Y - offY) / fit;
-        if (px < 0 || py < 0 || px >= pw || py >= ph) return false;
-        cx = (int)(px / _viewScale);
-        cy = map.Height - 1 - (int)(py / _viewScale);
-        return cx >= 0 && cy >= 0 && cx < map.Width && cy < map.Height;
+        px = (posImage.X - offX) / fit;
+        py = (posImage.Y - offY) / fit;
+        return px >= 0 && py >= 0 && px < pw && py < ph;
     }
 
     private double ViewFitScale()
@@ -523,6 +602,8 @@ public partial class MainWindow : Window
         }
         var map = _session.Map;
         if (map == null) return;
+        if (TryBeginWorldDataStroke(e))
+            return;
         var props = e.GetCurrentPoint(ViewportPanel).Properties;
         if (props.IsMiddleButtonPressed)
         {
@@ -538,12 +619,13 @@ public partial class MainWindow : Window
             return;
         }
         if (!props.IsLeftButtonPressed && !props.IsRightButtonPressed) return;
-        if (!TryPointToCorner(e.GetPosition(ViewportImage), out int cx, out int cy)) return;
+        if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
 
         _strokeErase = props.IsRightButtonPressed;
         _stroke = new BrushStroke();
         _strokeApplied = false;
-        _strokeAnchor = (cx, cy);
+        _strokeAnchor = ((int)cx, (int)cy);
+        _rampStrokeAnchor = (cx, cy);
         _history.BeginStroke(map);
         _strokeClock.Restart();
         _lastApplyTimestamp = 0;
@@ -568,9 +650,13 @@ public partial class MainWindow : Window
             return;
         }
         UpdateBrushCursor(e);
+        if (TryMoveWorldDataStroke(e))
+            return;
         if (_stroke == null) return;
-        if (!TryPointToCorner(e.GetPosition(ViewportImage), out int cx, out int cy)) return;
-        (cx, cy) = ConstrainToLine(cx, cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
+        if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
+        (cx, cy) = _brush.Op == BrushOp.Ramp
+            ? ConstrainRampToLine(cx, cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            : ConstrainToLine((int)cx, (int)cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
         // HiveWE：每次 move 都 apply(frame_delta)，不按格插值
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
     }
@@ -588,6 +674,8 @@ public partial class MainWindow : Window
             e.Pointer.Capture(null);
             return;
         }
+        if (TryEndWorldDataStroke(e))
+            return;
         if (_stroke == null) return;
         var map = _session.Map!;
         _history.CommitStroke(map);
@@ -610,7 +698,7 @@ public partial class MainWindow : Window
         return dt;
     }
 
-    private void ApplyBrushAt(int cx, int cy, float frameDelta)
+    private void ApplyBrushAt(float cx, float cy, float frameDelta)
     {
         var map = _session.Map;
         if (map == null || _stroke == null) return;
@@ -618,7 +706,8 @@ public partial class MainWindow : Window
         _strokeApplied = true;
         // HiveWE footprint = UI size corners; normalize can reach outside
         int reach = _brush.Radius + 6;
-        GlView.Scene.NotifyCornersChanged(cx - reach, cy - reach, cx + reach + 1, cy + reach + 1);
+        GlView.Scene.NotifyCornersChanged((int)MathF.Floor(cx) - reach, (int)MathF.Floor(cy) - reach,
+            (int)MathF.Ceiling(cx) + reach + 1, (int)MathF.Ceiling(cy) + reach + 1);
         if (!GlView.IsVisible)
             RenderViewport();
     }
@@ -626,9 +715,10 @@ public partial class MainWindow : Window
     private void UpdateBrushCursor(PointerEventArgs e)
     {
         var map = _session.Map;
-        bool active = map != null && _brush.Op != BrushOp.None
+        bool active = map != null
+            && (_mode is EditMode.Pathing or EditMode.Regions || _brush.Op != BrushOp.None)
             && TryPointToCorner(e.GetPosition(ViewportImage), out int cx, out int cy);
-        BrushCursor.IsVisible = active;
+        BrushCursor.IsVisible = active && _visibility.Brush;
         if (!active)
         {
             if (map != null && !GlView.IsVisible)
@@ -642,8 +732,13 @@ public partial class MainWindow : Window
                 + (c.Water ? " · 水" : "") + (c.Ramp ? " · 坡道" : "");
 
         double fit = ViewFitScale() * _zoom2d;
-        // HiveWE footprint ≈ UI size corners (diameter ≈ Radius)
-        double d = Math.Max(_brush.Radius, 1) * _viewScale * fit;
+        // Terrain radius is in corners; pathing radius is in 32-unit cells.
+        double d = _mode switch
+        {
+            EditMode.Pathing => Math.Max(SliderPathingRadius.Value * 2 + 1, 1) * _viewScale * fit / 4.0,
+            EditMode.Regions => Math.Max(_viewScale * fit / 2.0, 6),
+            _ => Math.Max(_brush.Radius, 1) * _viewScale * fit,
+        };
         var pos = e.GetPosition(ViewportPanel);
         BrushCursor.Width = d;
         BrushCursor.Height = d;
@@ -691,9 +786,16 @@ public partial class MainWindow : Window
             PruneSelection();
             UpdateLayerCounts();
         }
+        if (_history.LastTouchedPathing)
+            _session.MarkPathingDirty();
+        if (_history.LastTouchedRegions)
+        {
+            _session.MarkRegionsDirty();
+            RefreshRegionsUi();
+        }
         if (region is { } r)
             GlView.Scene.NotifyCornersChanged(r.X0, r.Y0, r.X1, r.Y1);
-        else if (!_history.LastTouchedPlacements)
+        else if (!_history.LastTouchedPlacements && !_history.LastTouchedPathing && !_history.LastTouchedRegions)
             GlView.Scene.NotifyMapReplaced();
         StatusLeft.Text = what;
     }
@@ -705,7 +807,7 @@ public partial class MainWindow : Window
         if (!_session.IsOpen) return;
         try
         {
-            _session.Save();
+            SaveCurrentDocument();
             StatusLeft.Text = _session.IsNativeFormat
                 ? $"已保存 d1map：{_session.SourcePath}"
                 : _session.IsFolder
@@ -737,6 +839,7 @@ public partial class MainWindow : Window
         try
         {
             _session.SaveAsNative(folder, mapName);
+            OpenModuleDocumentFromSession();
             GlView.Scene.ClearPluginPreview();
             RefreshFromSession();
             Refresh3DIfActive();
@@ -812,31 +915,48 @@ public partial class MainWindow : Window
     {
         var map = _session.Map;
         if (map == null) return;
+        if (_mode == EditMode.Pathing)
+        {
+            ApplyPathingAtCorner(cornerX, cornerY, erase);
+            return;
+        }
+        if (_mode == EditMode.Regions)
+        {
+            ApplyRegionAtCorner(cornerX, cornerY);
+            return;
+        }
         if (_brush.Op == BrushOp.None)
         {
             StatusLeft.Text = "未选择笔刷 — 先在右侧“地形”页选择工具，或点击一个地面纹理";
             return;
         }
-        int cx = Math.Clamp((int)MathF.Round(cornerX), 0, map.Width - 1);
-        int cy = Math.Clamp((int)MathF.Round(cornerY), 0, map.Height - 1);
+        float cx = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerX : MathF.Round(cornerX), 0, map.Width - 1);
+        float cy = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerY : MathF.Round(cornerY), 0, map.Height - 1);
         if (_stroke == null)
         {
             _strokeErase = erase;
             _stroke = new BrushStroke();
             _strokeApplied = false;
-            _strokeAnchor = (cx, cy);
+            _strokeAnchor = ((int)cx, (int)cy);
+            _rampStrokeAnchor = (cx, cy);
             _history.BeginStroke(map);
             _strokeClock.Restart();
             _lastApplyTimestamp = 0;
             ApplyBrushAt(cx, cy, frameDelta: 0.5f);
             return;
         }
-        (cx, cy) = ConstrainToLine(cx, cy, GlView.StrokeShift);
+        (cx, cy) = _brush.Op == BrushOp.Ramp
+            ? ConstrainRampToLine(cx, cy, GlView.StrokeShift)
+            : ConstrainToLine((int)cx, (int)cy, GlView.StrokeShift);
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
     }
 
     private void OnGlBrushStrokeEnded()
     {
+        if (_mode == EditMode.Pathing && EndPathingStroke())
+            return;
+        if (_mode == EditMode.Regions && EndRegionStroke())
+            return;
         if (_stroke == null) return;
         var map = _session.Map!;
         _history.CommitStroke(map);
@@ -860,9 +980,13 @@ public partial class MainWindow : Window
         if (c != null)
             StatusRight.Text = $"3D · 角点 {hx},{hy} · 高度 {c.GroundHeight:0.00} · 层 {c.LayerHeight}"
                 + (c.Water ? " · 水" : "") + (c.Ramp ? " · 坡道" : "");
-        GlView.Scene.BrushRing = _brush.Op != BrushOp.None
-            ? (cornerX, cornerY, Math.Max(_brush.Radius * 0.5f, 0.5f))
-            : null;
+        GlView.Scene.BrushRing = _mode switch
+        {
+            EditMode.Pathing => (cornerX, cornerY, Math.Max((float)SliderPathingRadius.Value / 4f, 0.25f)),
+            EditMode.Regions => (cornerX, cornerY, 0.25f),
+            _ when _brush.Op != BrushOp.None => (cornerX, cornerY, Math.Max(_brush.Radius * 0.5f, 0.5f)),
+            _ => null,
+        };
     }
 
     // ---------- 预览 / 对话框 ----------
@@ -880,7 +1004,7 @@ public partial class MainWindow : Window
             if (_session.IsNativeFormat)
             {
                 if (_session.IsDirty)
-                    _session.Save();
+                    SaveCurrentDocument();
                 previewPath = _session.SourcePath;
             }
             else
@@ -923,6 +1047,146 @@ public partial class MainWindow : Window
         await new TilePathingDialog(_session.Map).ShowDialog(this);
     }
 
+    private async void OnMapInfo(object? sender, RoutedEventArgs e)
+    {
+        if (!_session.IsFolder || _session.MapIdentity == null)
+        {
+            await MessageDialog.Show(this, "地图信息", "当前地图没有可编辑的 war3map.w3i。");
+            return;
+        }
+        var dialog = new MapInfoDialog(_session.MapIdentity);
+        await dialog.ShowDialog(this);
+        if (!dialog.Applied)
+            return;
+        _session.UpdateMapIdentity(_session.MapIdentity);
+        StatusLeft.Text = "地图信息已修改（未保存）";
+        UpdateTitle();
+    }
+
+    private async void OnImportHeightmap(object? sender, RoutedEventArgs e)
+    {
+        W3EMap? map = _session.Map;
+        if (map == null)
+            return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "导入高度图（红通道，HiveWE -16..+16）",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("高度图") { Patterns = new[] { "*.png", "*.bmp", "*.jpg", "*.jpeg", "*.tga" } },
+            },
+        });
+        string? path = files.FirstOrDefault()?.TryGetLocalPath();
+        if (path == null)
+            return;
+        try
+        {
+            using SkiaSharp.SKBitmap bitmap = SkiaSharp.SKBitmap.Decode(path)
+                ?? throw new InvalidDataException("无法解码图像。");
+            HiveWeHeightmapImport.Apply(
+                map,
+                bitmap.Width,
+                bitmap.Height,
+                (x, y) => bitmap.GetPixel(x, y).Red);
+            _history.Clear();
+            _session.MarkDirty();
+            RefreshFromSession();
+            GlView.Scene.NotifyMapReplaced();
+            StatusLeft.Text = $"已按 HiveWE 规则导入高度图：{Path.GetFileName(path)}（未保存）";
+        }
+        catch (Exception ex)
+        {
+            await MessageDialog.Show(this, "导入高度图失败", ex.Message);
+        }
+    }
+
+    private async void OnResizeMap(object? sender, RoutedEventArgs e)
+    {
+        W3EMap? map = _session.Map;
+        if (map == null) return;
+        var dialog = new ResizeMapDialog(map.TileCountX, map.TileCountY);
+        await dialog.ShowDialog(this);
+        if (!dialog.Confirmed) return;
+        try
+        {
+            _session.Resize(dialog.WidthTiles, dialog.HeightTiles);
+            _history.Clear();
+            _selection.Clear();
+            OpenModuleDocumentFromSession();
+            RefreshFromSession();
+            GlView.Scene.NotifyMapReplaced();
+            StatusLeft.Text = $"已按 HiveWE 四边规则调整为 {dialog.WidthTiles}×{dialog.HeightTiles}（未保存，撤销历史已清空）";
+        }
+        catch (Exception ex)
+        {
+            await MessageDialog.Show(this, "调整地图失败", ex.Message);
+        }
+    }
+
+    private async void ShowModuleInformation(string title, string message) =>
+        await MessageDialog.Show(this, title, message);
+
+    private void RunCopyPasteModule()
+    {
+        if (_selection.Count > 0)
+        {
+            _clipboard = _selection.Select(item => item.Clone()).ToList();
+            StatusLeft.Text = $"已复制 {_clipboard.Count} 个摆放；再执行一次可粘贴到当前指针。";
+        }
+        else if (_clipboard.Count > 0)
+        {
+            PasteClipboard();
+        }
+        else
+        {
+            StatusLeft.Text = "请先在 3D 视口选中单位或装饰物。";
+        }
+    }
+
+    private void ShowUnusedFilesReport()
+    {
+        IReadOnlyList<UnknownPart> files = _moduleHost.Document?.UnknownParts ?? Array.Empty<UnknownPart>();
+        string detail = files.Count == 0
+            ? "当前文档没有未被模块认领的文件。"
+            : $"发现 {files.Count} 个未认领文件（保存时仍会逐字节保留）：\n" +
+              string.Join("\n", files.Select(file => $"{file.FileName}  ({file.Bytes.Length} bytes)"));
+        ShowModuleInformation("未使用/未认领文件", detail);
+    }
+
+    private async void ShowAssetStatus()
+    {
+        _assets ??= new EditorAssets();
+        await new AssetManagerDialog(_assets).ShowDialog(this);
+    }
+
+    private async void ShowVisibilityDialog()
+    {
+        ApplyVisibilityOptions();
+        await new VisibilityDialog(_visibility, ApplyVisibilityOptions).ShowDialog(this);
+    }
+
+    private async void ShowSettingsDialog() =>
+        await new SettingsDialog(_visibility, ApplyVisibilityOptions).ShowDialog(this);
+
+    private void ApplyVisibilityOptions()
+    {
+        MenuOverlayUnits.IsChecked = _visibility.Units;
+        MenuOverlayDoodads.IsChecked = _visibility.Doodads;
+        MenuOverlayPathing.IsChecked = _visibility.Pathing;
+        GlView.Scene.Placements.ShowUnits = _visibility.Units;
+        GlView.Scene.Placements.ShowDoodads = _visibility.Doodads;
+        GlView.Scene.ShowBrush = _visibility.Brush;
+        GlView.Scene.LightingEnabled = _visibility.Lighting;
+        GlView.Scene.ShowWater = _visibility.Water;
+        GlView.Scene.ShowClickHelpers = _visibility.ClickHelpers;
+        GlView.Scene.ShowGrid = _visibility.Wireframe;
+        ViewportBadge.IsVisible = _visibility.Debug;
+        GlView.Scene.NotifyPlacementsChanged();
+        if (_session.IsOpen) RenderViewport();
+        GlView.RequestRender();
+    }
+
     private async void OnAbout(object? sender, RoutedEventArgs e)
     {
         await MessageDialog.Show(this, "关于 W3 编辑器",
@@ -950,7 +1214,8 @@ public partial class MainWindow : Window
     private async void OnWindowOpened(object? sender, EventArgs e)
     {
         StartControlServer();
-        LoadPlugins();
+        if (HasModuleCommand("host.plugin"))
+            LoadPlugins();
         var args = Environment.GetCommandLineArgs();
         string? openPath = null, shotPath = null, shot3dPath = null, newSpec = null, brushOp = null;
         bool brushTest = args.Contains("--brushtest");
@@ -1009,9 +1274,55 @@ public partial class MainWindow : Window
                     _session.Open(openPath!);
                 }
             }
+            OpenModuleDocumentFromSession();
             _history.Clear();
             GlView.Scene.ClearPluginPreview();
             RefreshFromSession();
+            string? objectShot = null;
+            string? moduleWindowId = null;
+            string? moduleWindowShot = null;
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "--object-shot") objectShot = args[i + 1];
+                if (args[i] == "--window-shot" && i + 2 < args.Length)
+                {
+                    moduleWindowId = args[i + 1];
+                    moduleWindowShot = args[i + 2];
+                }
+            }
+            if (objectShot != null)
+            {
+                await _moduleHost.Capabilities.Get<IWindowService>()!.OpenAsync("window.object-editor");
+                await Task.Delay(1200);
+                Window? objectWindow = (Application.Current?.ApplicationLifetime as
+                    Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?
+                    .Windows.FirstOrDefault(window => window != this && window.Title?.Contains("对象编辑器") == true);
+                bool captured = objectWindow != null && OperatingSystem.IsWindows()
+                    && NativeCapture.CaptureWindow(objectWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero, objectShot);
+                File.WriteAllText(Path.ChangeExtension(objectShot, ".txt"), captured ? "OK: object editor captured" : "FAIL: object editor capture");
+                objectWindow?.Close();
+                Close();
+                return;
+            }
+            if (moduleWindowId != null && moduleWindowShot != null)
+            {
+                IWindowService? windowService = _moduleHost.Capabilities.Get<IWindowService>();
+                bool opened = windowService?.CanOpen(moduleWindowId) == true;
+                if (opened)
+                    await windowService!.OpenAsync(moduleWindowId);
+                await Task.Delay(1200);
+                Window? moduleWindow = (Application.Current?.ApplicationLifetime as
+                    Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?
+                    .Windows.LastOrDefault(window => window != this);
+                bool captured = opened && moduleWindow != null && OperatingSystem.IsWindows()
+                    && NativeCapture.CaptureWindow(moduleWindow.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero, moduleWindowShot);
+                File.WriteAllText(Path.ChangeExtension(moduleWindowShot, ".txt"), captured
+                    ? $"OK: {moduleWindowId} captured"
+                    : $"FAIL: {moduleWindowId} open={opened} window={moduleWindow != null}");
+                moduleWindow?.Close();
+                Close();
+                return;
+            }
             if (brushOp != null && Enum.TryParse<BrushOp>(brushOp, out var preOp))
             {
                 // Pointer-path self test: preselect a tool exactly like a toggle click.
@@ -1023,7 +1334,7 @@ public partial class MainWindow : Window
             if (paint && _session.Map != null)
             {
                 RunNewMapPaint();
-                _session.Save();
+                SaveCurrentDocument();
             }
         }
         catch (Exception ex)
@@ -1060,7 +1371,7 @@ public partial class MainWindow : Window
                 timer.Start();
             }
         }
-        // --shotwin <png> [--tab terrain|doodads|units]: full-window PrintWindow
+        // --shotwin <png> [--tab terrain|doodads|units|pathing|regions]: full-window PrintWindow
         // capture (palette/UI evidence; the GL viewport is included).
         string? shotWinPath = null;
         for (int i = 0; i < args.Length - 1; i++)
@@ -1074,6 +1385,8 @@ public partial class MainWindow : Window
                 {
                     "doodads" => "Doodads",
                     "units" => "Units",
+                    "pathing" => "Pathing",
+                    "regions" => "Regions",
                     _ => "Terrain",
                 }));
             }
@@ -1169,6 +1482,437 @@ public partial class MainWindow : Window
         Close();
     }
 
+    /// <summary>
+    /// A1 bridge: module discovery is manifest-driven and does not reference
+    /// any module namespace. Legacy controls remain active during extraction;
+    /// their replacement panels/commands will consume this registry one by one.
+    /// In development, module assemblies may live beside MCP rather than the
+    /// Avalonia binary, so the loader accepts those explicit assembly paths.
+    /// </summary>
+    private void LoadEditorModules()
+    {
+        try
+        {
+            string? root = FindProjectRoot();
+            string[] args = Environment.GetCommandLineArgs();
+            string? manifestOverride = null;
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] == "--modules-manifest")
+                    manifestOverride = Path.GetFullPath(args[i + 1]);
+            }
+
+            string? manifestPath = manifestOverride ?? new[]
+            {
+                Path.Combine(AppContext.BaseDirectory, "modules.json"),
+                root == null ? "" : Path.Combine(root, "standalone", "modules.json"),
+            }.FirstOrDefault(File.Exists);
+            if (manifestPath == null)
+                return;
+            if (!File.Exists(manifestPath))
+                throw new FileNotFoundException("Module manifest not found.", manifestPath);
+
+            ModulesFile manifest = ModuleHost.ReadManifest(manifestPath);
+            if (!_moduleHost.Capabilities.Has<IEditorShellActions>())
+                _moduleHost.CapabilityRegistry.Provide<IEditorShellActions>(new EditorShellActions(this), "shell");
+            if (!_moduleHost.Capabilities.Has<IWindowService>())
+                _moduleHost.CapabilityRegistry.Provide<IWindowService>(new EditorWindowService(this), "shell");
+            if (!_moduleHost.Capabilities.Has<IWarcraftDataSource>())
+                _moduleHost.CapabilityRegistry.Provide<IWarcraftDataSource>(new EditorWarcraftDataSource(this), "shell");
+            _assets ??= new EditorAssets();
+            _catalog ??= new ObjectCatalog(_assets);
+            if (!_moduleHost.Capabilities.Has<IWarcraftObjectDatabase>() && _catalog is IWarcraftObjectDatabase objectDatabase)
+                _moduleHost.CapabilityRegistry.Provide<IWarcraftObjectDatabase>(objectDatabase, "shell");
+            var runtimeDisabled = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] != "--disable-module")
+                    continue;
+                string id = args[i + 1];
+                runtimeDisabled.Add(id);
+                foreach (ModuleEntry entry in manifest.Modules.Where(module => module.Id == id))
+                    entry.Enabled = false;
+            }
+            var assemblies = new List<Assembly>();
+            foreach (string name in manifest.Assemblies)
+            {
+                string? path = FindModuleAssembly(name, root);
+                if (path == null)
+                    continue;
+                try { assemblies.Add(Assembly.LoadFrom(path)); }
+                catch (Exception ex) { Console.Error.WriteLine($"Module assembly '{name}': {ex.Message}"); }
+            }
+            _moduleLoadReport = _moduleHost.Load(manifest, assemblies);
+            PopulateModuleCommands();
+            ApplyCommandRegistry();
+            ApplyPanelRegistry();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (args[i] != "--module-report")
+                    continue;
+                string reportPath = Path.GetFullPath(args[i + 1]);
+                Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+                File.WriteAllText(reportPath, System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    loaded = _moduleLoadReport.Loaded,
+                    disabled = _moduleLoadReport.Disabled,
+                    skipped = _moduleLoadReport.Skipped.Select(item => new { id = item.Id, reason = item.Reason }),
+                    commands = _moduleHost.Registry.Commands.Select(command => command.Id),
+                    visibleCommands = GetVisibleCommandIds(),
+                    tools = _moduleHost.Registry.Tools.Select(tool => tool.Id),
+                    panels = _moduleHost.Registry.Panels.Select(panel => panel.Id),
+                    visiblePanels = GetVisiblePanelIds(),
+                    windows = _moduleHost.Registry.Windows.Select(window => window.Id),
+                    runtimeDisabled,
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            }
+            string warning = _moduleLoadReport.Skipped.Count == 0
+                ? ""
+                : $"，跳过 {_moduleLoadReport.Skipped.Count}";
+            StatusLeft.Text = $"模块 {_moduleLoadReport.Loaded.Count}/{manifest.Modules.Count} 已加载{warning}";
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"LoadEditorModules: {ex}");
+            StatusLeft.Text = "模块加载失败：" + ex.Message;
+        }
+    }
+
+    private void PopulateModuleCommands()
+    {
+        if (_moduleHost.Registry.Commands.Count == 0)
+            return;
+        var context = new ShellModuleContext(_moduleHost);
+        MenuPlugins.Items.Add(new Separator());
+        var commandsWithDedicatedShellControls = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "op.newmap", "op.open", "op.save", "op.export",
+            "op.changetileset", "op.changetilepathing", "view.camera",
+        };
+        foreach (CommandDescriptor command in _moduleHost.Registry.Commands)
+        {
+            if (commandsWithDedicatedShellControls.Contains(command.Id))
+                continue;
+            var item = new MenuItem
+            {
+                Header = command.DisplayName,
+                Tag = command.Id,
+                IsEnabled = command.CanExecute?.Invoke(context) ?? true,
+            };
+            item.Click += async (_, _) =>
+            {
+                try
+                {
+                    await command.Handler(context, CancellationToken.None);
+                    StatusLeft.Text = $"模块命令完成：{command.DisplayName}";
+                }
+                catch (Exception ex)
+                {
+                    StatusLeft.Text = $"模块命令失败：{command.DisplayName} — {ex.Message}";
+                }
+            };
+            _moduleCommandItems[command.Id] = (item, command);
+            MenuPlugins.Items.Add(item);
+        }
+    }
+
+    private void RefreshModuleCommandStates()
+    {
+        var context = new ShellModuleContext(_moduleHost);
+        foreach ((MenuItem item, CommandDescriptor command) in _moduleCommandItems.Values)
+            item.IsEnabled = command.CanExecute?.Invoke(context) ?? true;
+    }
+
+    private void ApplyPanelRegistry()
+    {
+        ComposePhysicalModulePanels();
+        var active = _moduleHost.Registry.Panels
+            .Select(panel => panel.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+        TerrainTab.IsVisible = active.Contains("panel.terrain");
+        DoodadsTab.IsVisible = active.Contains("panel.doodads");
+        UnitsTab.IsVisible = active.Contains("panel.units");
+        PathingTab.IsVisible = active.Contains("panel.pathing");
+        RegionsTab.IsVisible = active.Contains("panel.regions");
+
+        BtnModeTerrain.IsVisible = TerrainTab.IsVisible;
+        BtnModeDoodads.IsVisible = DoodadsTab.IsVisible;
+        BtnModeUnits.IsVisible = UnitsTab.IsVisible;
+        BtnModePathing.IsVisible = PathingTab.IsVisible;
+        BtnModeRegions.IsVisible = RegionsTab.IsVisible;
+
+        bool anyRight = ToolTabs.Items.OfType<TabItem>().Any(tab => tab.IsVisible);
+        RightSidebar.IsVisible = anyRight;
+        MainLayoutGrid.ColumnDefinitions[3].Width = anyRight
+            ? new Avalonia.Controls.GridLength(6)
+            : new Avalonia.Controls.GridLength(0);
+        MainLayoutGrid.ColumnDefinitions[4].Width = anyRight
+            ? new Avalonia.Controls.GridLength(316)
+            : new Avalonia.Controls.GridLength(0);
+
+        bool minimap = active.Contains("panel.minimap");
+        BtnToggleLeftSidebar.IsVisible = minimap;
+        SetLeftSidebarVisible(minimap);
+
+        if (ToolTabs.SelectedItem is not TabItem selected || !selected.IsVisible)
+            ToolTabs.SelectedItem = ToolTabs.Items.OfType<TabItem>().FirstOrDefault(tab => tab.IsVisible);
+    }
+
+    private IReadOnlyList<string> GetVisiblePanelIds()
+    {
+        var visible = new List<string>();
+        if (TerrainTab.IsVisible) visible.Add("panel.terrain");
+        if (DoodadsTab.IsVisible) visible.Add("panel.doodads");
+        if (UnitsTab.IsVisible) visible.Add("panel.units");
+        if (PathingTab.IsVisible) visible.Add("panel.pathing");
+        if (RegionsTab.IsVisible) visible.Add("panel.regions");
+        if (LeftSidebar.IsVisible) visible.Add("panel.minimap");
+        return visible;
+    }
+
+    private sealed class ShellModuleContext(ModuleHost host) : IModuleContext
+    {
+        public IMapDocument? Document => host.Document;
+        public ICapabilities Capabilities => host.Capabilities;
+        public IEditorLog Log => host.Log;
+        public string ModuleId => "shell";
+        public event Action<IMapDocument?>? DocumentChanged
+        {
+            add => host.DocumentChanged += value;
+            remove => host.DocumentChanged -= value;
+        }
+        public void AddCommand(CommandDescriptor command) => throw ReadOnly();
+        public void AddTool(IToolDescriptor tool) => throw ReadOnly();
+        public void AddPanel(IPanelDescriptor panel) => throw ReadOnly();
+        public void AddWindow(IWindowDescriptor window) => throw ReadOnly();
+        public void AddOverlay(IViewportOverlay overlay) => throw ReadOnly();
+        public void AddPartCodec(IPartCodec codec) => throw ReadOnly();
+        public void AddAssetSource(IAssetSource source) => throw ReadOnly();
+        public void ProvideCapability<T>(T instance) where T : class => throw ReadOnly();
+        private static InvalidOperationException ReadOnly() =>
+            new("The shell context consumes contributions; it cannot register them.");
+    }
+
+    private sealed class EditorShellActions(MainWindow owner) : IEditorShellActions
+    {
+        public bool CanExecute(string actionId) => actionId switch
+        {
+            "op.newmap" or "op.open" or "dialog.settings" or "host.plugin" or
+            "assets.pack" or "format.d1map" => true,
+            "op.save" or "op.saveas" or "op.export" or
+            "op.changetileset" or "op.changetilepathing" or
+            "dialog.tilesetter" or "dialog.tilepicker" or "dialog.tilepather" or "dialog.mapinfo" or
+            "op.importheightmap" or "op.resize" or "op.unusedfiles" or "op.copypaste" or
+            "op.viewhistory" or "op.testmap" or "part.tilesets" or "manager.asset" or
+            "bridge.godot" or "import.fbx" or "view.visibility" or
+            "view.camera" or "render.terrain" or "render.water" or "render.cliff" or "render.pbr"
+                => owner._session.IsOpen,
+            _ => false,
+        };
+
+        public Task ExecuteAsync(string actionId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            switch (actionId)
+            {
+                case "op.newmap": owner.OnNewMap(null, null!); break;
+                case "op.open": owner.OnOpenMap(null, null!); break;
+                case "op.save": owner.OnSave(null, null!); break;
+                case "op.saveas":
+                case "op.export": owner.OnSaveAsNative(null, null!); break;
+                case "op.changetileset":
+                case "dialog.tilesetter":
+                case "dialog.tilepicker": owner.OnTileSetter(null, null!); break;
+                case "op.changetilepathing":
+                case "dialog.tilepather": owner.OnTilePathing(null, null!); break;
+                case "view.camera": owner.Toggle3DFromModule(); break;
+                case "dialog.mapinfo": owner.OnMapInfo(null, null!); break;
+                case "op.importheightmap": owner.OnImportHeightmap(null, null!); break;
+                case "op.resize": owner.OnResizeMap(null, null!); break;
+                case "op.unusedfiles": owner.ShowUnusedFilesReport(); break;
+                case "op.copypaste": owner.RunCopyPasteModule(); break;
+                case "op.viewhistory": owner.ShowModuleInformation("撤销历史",
+                    $"可撤销：{owner._history.CanUndo}\n可重做：{owner._history.CanRedo}\n地图 resize 会按 HiveWE/WE 规则清空全部历史。"); break;
+                case "op.testmap":
+                case "bridge.godot": owner.OnGodotPreview(null, null!); break;
+                case "part.tilesets": owner.OnTileSetter(null, null!); break;
+                case "manager.asset": owner.ShowAssetStatus(); break;
+                case "view.visibility": owner.ShowVisibilityDialog(); break;
+                case "dialog.settings": owner.ShowSettingsDialog(); break;
+                case "format.d1map": owner.ShowModuleInformation("d1map",
+                    "原生地图由 map.json + terrain.bin + placements.bin 组成，通过原子代提交保存。"); break;
+                case "import.fbx": owner.ShowModuleInformation("FBX 导入",
+                    "FBX 导入能力由 v1 兼容插件注册；请从工具 → 插件选择导入命令。"); break;
+                case "host.plugin": owner.ShowModuleInformation("插件宿主", "v1 IW3EditorPlugin 兼容宿主已启用。"); break;
+                case "assets.pack": owner.ShowModuleInformation("资产包", "资产包格式遵循 docs/ASSET_PACK_SPEC.md。"); break;
+                case "render.pbr": owner.Ensure3DFromModule(actionId); break;
+                case "render.terrain":
+                case "render.water":
+                case "render.cliff": owner.Ensure3DFromModule(actionId); break;
+                default: throw new InvalidOperationException($"Unknown Shell action '{actionId}'.");
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class EditorWindowService(MainWindow owner) : IWindowService
+    {
+        private readonly Dictionary<string, Window> _open = new(StringComparer.Ordinal);
+
+        public bool CanOpen(string windowId) =>
+            owner._moduleHost.Registry.Windows.Any(window => window.Id == windowId);
+
+        public Task OpenAsync(string windowId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_open.TryGetValue(windowId, out Window? existing))
+            {
+                existing.Activate();
+                return Task.CompletedTask;
+            }
+
+            IWindowDescriptor descriptor = owner._moduleHost.Registry.Windows
+                .FirstOrDefault(window => window.Id == windowId)
+                ?? throw new InvalidOperationException($"Window '{windowId}' is not registered.");
+            if (descriptor.CreateWindow(new ShellModuleContext(owner._moduleHost)) is not Window window)
+                throw new InvalidOperationException($"Window '{windowId}' did not create an Avalonia Window.");
+
+            window.Title = string.IsNullOrWhiteSpace(window.Title) ? descriptor.Title : window.Title;
+            if (double.IsNaN(window.Width) || window.Width <= 0) window.Width = descriptor.DefaultWidth;
+            if (double.IsNaN(window.Height) || window.Height <= 0) window.Height = descriptor.DefaultHeight;
+            _open[windowId] = window;
+            window.Closed += (_, _) => _open.Remove(windowId);
+            window.Show(owner);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class EditorWarcraftDataSource(MainWindow owner) : IWarcraftDataSource
+    {
+        public bool TryRead(string relativePath, out byte[] bytes)
+        {
+            owner._assets ??= new EditorAssets();
+            string? path = owner._assets.ResolveDataFile(relativePath);
+            if (path == null)
+            {
+                bytes = Array.Empty<byte>();
+                return false;
+            }
+            bytes = File.ReadAllBytes(path);
+            return true;
+        }
+    }
+
+    private void OpenModuleDocumentFromSession()
+    {
+        if (!_session.IsOpen || string.IsNullOrWhiteSpace(_session.SourcePath))
+            return;
+        string folder = _session.FormatKind == Services.MapFormatKind.War3EnvironmentFile
+            ? Path.GetDirectoryName(_session.W3ePath) ?? _session.SourcePath
+            : _session.SourcePath;
+        var format = _session.FormatKind switch
+        {
+            Services.MapFormatKind.War3Folder => W3Editor.Contracts.MapFormatKind.War3Folder,
+            Services.MapFormatKind.War3EnvironmentFile => W3Editor.Contracts.MapFormatKind.War3EnvironmentFile,
+            Services.MapFormatKind.D1MapFolder => W3Editor.Contracts.MapFormatKind.D1MapFolder,
+            _ => W3Editor.Contracts.MapFormatKind.None,
+        };
+        _moduleHost.OpenDocument(folder, format, _session.CaptureSavePayloads());
+        RefreshModuleCommandStates();
+    }
+
+    private void SaveCurrentDocument()
+    {
+        if (_moduleHost.Document == null)
+            throw new InvalidOperationException("Module document is not open.");
+        _session.Save(_moduleHost.Document);
+    }
+
+    private bool HasModuleCommand(string id) =>
+        _moduleHost.Registry.Commands.Any(command => command.Id == id);
+
+    private void ApplyCommandRegistry()
+    {
+        MenuNewMap.IsVisible = HasModuleCommand("op.newmap");
+        MenuOpenMap.IsVisible = HasModuleCommand("op.open");
+        BtnOpen.IsVisible = MenuOpenMap.IsVisible;
+        MenuSave.IsVisible = HasModuleCommand("op.save");
+        BtnSave.IsVisible = MenuSave.IsVisible;
+        MenuExport.IsVisible = HasModuleCommand("op.export");
+        BtnExport.IsVisible = MenuExport.IsVisible;
+        MenuTileSetter.IsVisible = HasModuleCommand("op.changetileset");
+        BtnTileSetter.IsVisible = MenuTileSetter.IsVisible;
+        MenuTilePathing.IsVisible = HasModuleCommand("op.changetilepathing");
+        BtnTilePathing.IsVisible = MenuTilePathing.IsVisible;
+        BtnView3D.IsVisible = HasModuleCommand("view.camera");
+    }
+
+    private IReadOnlyList<string> GetVisibleCommandIds()
+    {
+        var visible = new List<string>();
+        if (MenuNewMap.IsVisible) visible.Add("op.newmap");
+        if (MenuOpenMap.IsVisible) visible.Add("op.open");
+        if (MenuSave.IsVisible) visible.Add("op.save");
+        if (MenuExport.IsVisible) visible.Add("op.export");
+        if (MenuTileSetter.IsVisible) visible.Add("op.changetileset");
+        if (MenuTilePathing.IsVisible) visible.Add("op.changetilepathing");
+        if (BtnView3D.IsVisible) visible.Add("view.camera");
+        visible.AddRange(MenuPlugins.Items.OfType<MenuItem>()
+            .Select(item => item.Tag as string)
+            .Where(id => !string.IsNullOrEmpty(id))!);
+        return visible;
+    }
+
+    private void Toggle3DFromModule()
+    {
+        BtnView3D.IsChecked = BtnView3D.IsChecked != true;
+        OnView3DToggled(null, null!);
+    }
+
+    private void Ensure3DFromModule(string actionId)
+    {
+        if (BtnView3D.IsChecked != true)
+        {
+            BtnView3D.IsChecked = true;
+            Start3D();
+        }
+        StatusLeft.Text = $"模块已启用：{actionId}";
+    }
+
+    private static string? FindModuleAssembly(string name, string? root)
+    {
+        var directories = new List<string> { AppContext.BaseDirectory };
+        if (root != null)
+        {
+            directories.Add(Path.Combine(root, "standalone", name, "bin", "Release", "net8.0"));
+            directories.Add(Path.Combine(root, "standalone", name, "bin", "Debug", "net8.0"));
+            // MCP also copies module DLLs, but those may be stale after a
+            // panel-only rebuild. Prefer the module's own output directory.
+            directories.Add(Path.Combine(root, "standalone", "W3Editor.Mcp", "bin", "Release", "net8.0"));
+            directories.Add(Path.Combine(root, "standalone", "W3Editor.Mcp", "bin", "Debug", "net8.0"));
+        }
+        return directories
+            .Select(directory => Path.Combine(directory, name + ".dll"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static string? FindProjectRoot()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "project.godot")))
+                return dir.FullName;
+        }
+        string current = Directory.GetCurrentDirectory();
+        for (DirectoryInfo? dir = new(current); dir != null; dir = dir.Parent)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "project.godot")))
+                return dir.FullName;
+        }
+        return null;
+    }
+
     private void OnHideLeftSidebar(object? sender, RoutedEventArgs e) =>
         SetLeftSidebarVisible(false);
 
@@ -1200,10 +1944,10 @@ public partial class MainWindow : Window
     {
         try
         {
-            var plugins = PluginLoader.LoadAll(EditorPaths.PluginsDir);
+            var plugins = PluginLoader.LoadAll(EditorPaths.PluginsDir, out var loadFailures);
             var ctx = new EditorPluginContext(this);
             int ok = 0;
-            var failures = new List<string>();
+            var failures = new List<string>(loadFailures);
             foreach (var plugin in plugins)
             {
                 try

@@ -2,13 +2,13 @@ extends SceneTree
 ## Headless visual probe for a small Lost Temple tile area.
 ## Usage: --script res://tools/w3_render_tile_debug.gd -- <tile_x> <tile_y>
 
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3GpuTerrain = preload("res://addons/w3kit/w3_gpu_terrain.gd")
-const W3CliffBuilder = preload("res://addons/w3kit/w3_cliff_builder.gd")
-const W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
-const FreeFlyCamera = preload("res://scripts/w3/free_fly_camera.gd")
-const W3War3Lit = preload("res://addons/w3kit/w3_war3_lit.gd")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3GpuTerrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs")
+const W3CliffBuilder = preload("res://addons/w3kit_cs/Terrain/WarsmashCliffRenderer.cs")
+const W3HeightSampler = preload("res://addons/w3kit_cs/Terrain/W3HeightSamplerBridge.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
+const FreeFlyCamera = preload("res://addons/w3kit_cs/Sandbox/FreeFlyCamera.cs")
+const W3LightingController = preload("res://addons/w3kit_cs/Lighting/W3LightingController.cs")
 
 
 func _initialize() -> void:
@@ -28,7 +28,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var provider := W3TextureProvider.new()
-	provider.load_terrain_slk()
+	provider.load_terrain_slk("")
 	var terrain := W3GpuTerrain.new()
 	root.add_child(terrain)
 	var shd_bytes := PackedByteArray()
@@ -62,8 +62,9 @@ func _run() -> void:
 		if render_mode == "flat":
 			terrain.set_flat_inspect(true)
 			cliffs.set_flat_inspect(true)
-	var sampler := W3HeightSampler.new(level)
-	W3War3Lit.apply_to_scene(root)
+	var sampler := W3HeightSampler.new() # C# 带参构造在 GDScript 侧不可用
+	sampler.bind_map(level)
+	W3LightingController.apply_to_scene(root, null)
 	var cam: Camera3D = FreeFlyCamera.new()
 	root.add_child(cam)
 	if render_mode == "perspective":

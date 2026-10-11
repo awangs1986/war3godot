@@ -1,0 +1,10 @@
+{
+  "tool": "w3e-load",
+  "source": "testdata/hivewe_sample\\war3map.w3e",
+  "corners": {
+    "w": 17,
+    "h": 17
+  },
+  "maxAbs": 0.7128906,
+  "nonzero": 266
+}

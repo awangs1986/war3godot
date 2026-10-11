@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-const W3TerrainSlk = preload("res://addons/w3kit/w3_terrain_slk.gd")
-const W3MapWorld = preload("res://addons/w3kit/w3_map_world.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+const W3TerrainSlk = preload("res://addons/w3kit_cs/Formats/W3TerrainSlkBridge.cs")
+const W3MapWorld = preload("res://addons/w3kit_cs/World/W3MapWorld.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
 
 
 func _initialize() -> void:
@@ -17,21 +17,20 @@ func _run() -> void:
 		quit(1)
 		return
 	var terrain_slk = W3TerrainSlk.new()
-	terrain_slk.load_from_asset_root(W3Paths.asset_root_path())
+	terrain_slk.load_from_asset_root(W3Paths.new().asset_root_path())
 	print("TERRAIN_TILESET\t", level.tileset)
 	var errors := 0
 	for tile_id in level.ground_tilesets:
 		var classic_rel := terrain_slk.resolve_blp_rel(str(tile_id)).replace("\\", "/")
 		var hd_rel := classic_rel.get_basename() + "_diffuse.dds"
 		print("TERRAIN_GROUND\t", tile_id, "\t", classic_rel, "\t", hd_rel,
-			"\t", W3Paths.resolve_reforged_path(hd_rel))
-		if not _valid_dds(W3Paths.resolve_reforged_path(hd_rel)):
+			"\t", W3Paths.new().resolve_reforged_path(hd_rel))
+		if not _valid_dds(W3Paths.new().resolve_reforged_path(hd_rel)):
 			errors += 1
 	for cliff_id in level.cliff_tilesets:
 		print("TERRAIN_CLIFF_ID\t", cliff_id)
 	var world = W3MapWorld.new()
 	world.terrain_only = true
-	world.use_csharp_terrain = true
 	root.add_child(world)
 	if not world.load_path(ProjectSettings.globalize_path("res://war3/maps/LostTemple/lost_temple.res")):
 		printerr("W3_REFORGED_TERRAIN_FAIL runtime load: ", world.get_status())
@@ -52,14 +51,14 @@ func _run() -> void:
 					and batch_texture.get_width() > 64
 					and batch_texture.get_height() > 64
 				)
-			if batch_texture_rel.is_empty() or W3Paths.resolve_game_path(batch_texture_rel).is_empty() or not found_batch_texture:
+			if batch_texture_rel.is_empty() or W3Paths.new().resolve_game_path(batch_texture_rel).is_empty() or not found_batch_texture:
 				cliff_texture_fallbacks += 1
 			continue
 		var rel := str(child.get_meta("w3_model_rel", ""))
 		if not rel.is_empty():
 			cliff_models[rel] = int(cliff_models.get(rel, 0)) + 1
 		var texture_rel := str(child.get_meta("w3_texture_rel", ""))
-		if texture_rel.is_empty() or W3Paths.resolve_game_path(texture_rel).is_empty():
+		if texture_rel.is_empty() or W3Paths.new().resolve_game_path(texture_rel).is_empty():
 			cliff_texture_fallbacks += 1
 	if cliff_batches <= 0:
 		printerr("TERRAIN_CLIFF_BATCHES_MISSING")
@@ -70,22 +69,22 @@ func _run() -> void:
 	var model_paths: Array = cliff_models.keys()
 	model_paths.sort_custom(func(a, b): return str(a).to_lower() < str(b).to_lower())
 	for rel in model_paths:
-		var hd_model_path := W3Paths.resolve_reforged_path(str(rel))
+		var hd_model_path := W3Paths.new().resolve_reforged_path(str(rel))
 		print("TERRAIN_CLIFF_MODEL\t", cliff_models[rel], "\t", rel,
 			"\t", hd_model_path)
 		var cliff_model = W3MdxModel.load_file(hd_model_path) if not hd_model_path.is_empty() else null
 		if cliff_model == null or cliff_model.version <= 800 or cliff_model.geosets.is_empty():
 			errors += 1
 	for shared_cliff in ["ReplaceableTextures/Cliff/Cliff0.dds", "ReplaceableTextures/Cliff/Cliff1.dds"]:
-		if not _valid_dds(W3Paths.resolve_reforged_path(shared_cliff)):
+		if not _valid_dds(W3Paths.new().resolve_reforged_path(shared_cliff)):
 			errors += 1
 	var blight := "TerrainArt/Blight/Lords_Blight_diffuse.dds"
-	if not _valid_dds(W3Paths.resolve_reforged_path(blight)):
+	if not _valid_dds(W3Paths.new().resolve_reforged_path(blight)):
 		errors += 1
 	var water_missing := 0
 	for frame in 45:
 		var water_rel := "ReplaceableTextures/Water/Water%02d.blp" % frame
-		if W3Paths.resolve_path(water_rel).is_empty():
+		if W3Paths.new().resolve_path(water_rel).is_empty():
 			water_missing += 1
 			errors += 1
 	print("W3_REFORGED_TERRAIN_OK ground=", level.ground_tilesets.size(),

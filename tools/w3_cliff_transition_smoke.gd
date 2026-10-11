@@ -4,9 +4,9 @@ extends SceneTree
 ## the source and neighbour ground holes, then uses CliffTransBHLA0.
 ## the neighbouring 71,118 tile is the full-ramp ground entrance.
 
-const W3CliffBuilder = preload("res://addons/w3kit/w3_cliff_builder.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
+const W3CliffBuilder = preload("res://addons/w3kit_cs/Terrain/WarsmashCliffRenderer.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
 
 
 func _initialize() -> void:
@@ -24,7 +24,7 @@ func _run() -> void:
 	root.add_child(builder)
 	builder.map = level
 	var provider := W3TextureProvider.new()
-	provider.load_terrain_slk()
+	provider.load_terrain_slk("")
 	if provider.get_cliff_ground_tile("CLgr") != "Lgrs":
 		push_error("W3_CLIFF_TRANSITION_SMOKE_FAIL CLgr ground mapping is %s" % provider.get_cliff_ground_tile("CLgr"))
 		quit(1)
@@ -83,7 +83,7 @@ func _run() -> void:
 		return
 	# 117,56 is a flat CLgr-adjacent tile. HiveWE replaces its four effective
 	# corner textures with CliffTypes.groundTile=Lgrs, not tileset index 0 dirt.
-	var terrain := preload("res://addons/w3kit/w3_gpu_terrain.gd").new()
+	var terrain := preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs").new()
 	terrain.map = level
 	terrain.textures = provider
 	terrain._layer_ids = level.ground_tilesets.duplicate()

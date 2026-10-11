@@ -3,7 +3,7 @@ extends SceneTree
 
 
 func _init() -> void:
-	var cfg = preload("res://addons/w3kit/w3_asset_config.gd").new()
+	var cfg = preload("res://addons/w3kit_cs/Config/W3AssetConfiguration.cs").new()
 	cfg.load_config()
 	var report: Dictionary = cfg.check_report()
 	print("=== W3 Asset Root Check ===")

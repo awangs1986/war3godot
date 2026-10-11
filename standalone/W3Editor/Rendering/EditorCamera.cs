@@ -1,4 +1,5 @@
 using System.Numerics;
+using W3Editor.Services;
 
 namespace W3Editor.Rendering;
 
@@ -85,8 +86,7 @@ public sealed class EditorCamera
     {
         if (rightAxis == 0f && forwardAxis == 0f)
             return;
-        float speed = 40f * (Distance / Tile) / 30f * deltaSeconds * Tile;
-        Target += GroundRight * (rightAxis * speed) + GroundForward * (forwardAxis * speed);
+        Target += EditorCameraMath.KeyPanDelta(Yaw, Distance, rightAxis, forwardAxis, deltaSeconds);
     }
 
     /// <summary>HiveWE Camera::reset — restores angles and distance, keeps the target.</summary>

@@ -1,11 +1,11 @@
 extends SceneTree
 
-const W3DooParser = preload("res://addons/w3kit/w3_doo_parser.gd")
-const W3ObjectCatalog = preload("res://addons/w3kit/w3_object_catalog.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
+const W3DooParser = preload("res://addons/w3kit_cs/Formats/W3DooParserBridge.cs")
+const W3ObjectCatalog = preload("res://addons/w3kit_cs/Assets/W3ObjectCatalog.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3HeightSampler = preload("res://addons/w3kit_cs/Terrain/W3HeightSamplerBridge.cs")
 
 
 func _initialize() -> void:
@@ -23,11 +23,12 @@ func _run() -> void:
 		quit(1)
 		return
 	var catalog := W3ObjectCatalog.new()
-	catalog.load_from_roots()
+	catalog.load_from_roots(null)
 	var terrain = W3EMap.load_file(ProjectSettings.globalize_path("res://war3/maps/LostTemple/source/war3map.w3e"))
-	var sampler := W3HeightSampler.new(terrain)
-	var placements: Array = W3DooParser.parse_doodads(level.doodad_bytes)
-	placements.append_array(W3DooParser.parse_units(level.unit_bytes))
+	var sampler := W3HeightSampler.new() # C# 带参构造在 GDScript 侧不可用
+	sampler.bind_map(terrain)
+	var placements: Array = W3DooParser.parse_doodads(level.doodad_bytes, 0, 0)
+	placements.append_array(W3DooParser.parse_units(level.unit_bytes, 0, 0))
 	var target := Vector2(level.center_offset.x + tx * 128.0, level.center_offset.y + ty * 128.0)
 	var nearby: Array = []
 	for p in placements:
@@ -50,7 +51,7 @@ func _run() -> void:
 		if p.model_path.is_empty() or inspected.has(p.model_path):
 			continue
 		inspected[p.model_path] = true
-		var abs_path := W3Paths.resolve_game_path(p.model_path)
+		var abs_path := W3Paths.new().resolve_game_path(p.model_path)
 		var model = W3MdxModel.load_file(abs_path)
 		if model == null:
 			print("  MODEL_MISSING resolved=%s" % abs_path)
@@ -68,7 +69,7 @@ func _run() -> void:
 			var texture_path: String = model.textures[i]
 			print("  TEX %d rid=%d path=%s resolved=%s exists=%s" % [
 				i, model.texture_replaceable_ids[i], texture_path,
-				W3Paths.resolve_game_path(texture_path), FileAccess.file_exists(W3Paths.resolve_game_path(texture_path)),
+				W3Paths.new().resolve_game_path(texture_path), FileAccess.file_exists(W3Paths.new().resolve_game_path(texture_path)),
 			])
 	quit(0)
 

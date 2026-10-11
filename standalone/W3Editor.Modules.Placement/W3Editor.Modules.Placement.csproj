@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Domain assembly: part.doodads, part.units, tool.doodad, tool.unit.
+       Must never reference another Modules.* assembly — cross-module needs go
+       through ICapabilities. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>W3Editor.Modules.Placement</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
+  </ItemGroup>
+
+</Project>

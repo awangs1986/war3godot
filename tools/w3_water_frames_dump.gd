@@ -1,16 +1,16 @@
-extends SceneTree
+﻿extends SceneTree
 ## Evidence dump for the red/blue water flicker: decode every Water frame BLP
 ## and print its JPEG component count plus average RGB. Mixed red-vs-blue
 ## averages across frames means inconsistent channel handling in the decoder.
 
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-const W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+const W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
 
 
 func _initialize() -> void:
 	for frame in 45:
 		var rel := "ReplaceableTextures/Water/Water%02d.blp" % frame
-		var absolute := W3Paths.resolve_path(rel)
+		var absolute := W3Paths.new().resolve_path(rel)
 		if absolute.is_empty():
 			print("frame %02d: MISSING" % frame)
 			continue

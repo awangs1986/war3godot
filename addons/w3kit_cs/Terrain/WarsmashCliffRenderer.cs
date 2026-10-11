@@ -1,8 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using Godot;
+using Diablo1Like.W3.Mdx;
 using GDictionary = Godot.Collections.Dictionary;
 
 namespace Diablo1Like.W3.Terrain;
@@ -16,19 +15,22 @@ public partial class WarsmashCliffRenderer : Node3D
 {
     private const int BatchTileSize = 32;
 
-    private sealed record CliffType(string CliffModelDir, string RampModelDir, string TextureDir, string TextureFile);
-
     private sealed class CliffBatchBuilder
     {
         public readonly SurfaceTool Surface = new();
-        public Material? Material;
         public int InstanceCount;
+        public Material Material { get; }
 
-        public CliffBatchBuilder() => Surface.Begin(Mesh.PrimitiveType.Triangles);
+        public CliffBatchBuilder(Material material)
+        {
+            Material = material;
+            Surface.Begin(Mesh.PrimitiveType.Triangles);
+        }
     }
 
-    private readonly Dictionary<string, CliffType> _types = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Variant> _modelCache = new(StringComparer.OrdinalIgnoreCase);
+    private GodotTerrainAssets? _assets;
+    private readonly HashSet<ShaderMaterial> _materials = new();
+    internal TerrainBuild? BuildResult { get; private set; }
     private readonly Dictionary<string, CliffBatchBuilder> _batchBuilders = new(StringComparer.OrdinalIgnoreCase);
     private W3TerrainMap? _map;
     private GodotObject? _mapResource;
@@ -54,16 +56,12 @@ public partial class WarsmashCliffRenderer : Node3D
         _mapResource = mapResource;
         _textures = textureProvider;
         _map = W3TerrainMapBridge.FromGodotResource(mapResource);
-        LoadCliffTypes();
+        _assets = new GodotTerrainAssets(_map, ResolvePath);
+        BuildResult = _assets.Build();
+        _map = BuildResult.Map;
+        _missing = BuildResult.MissingModels.Count;
         BuildShadowTexture(shadowBytes);
-        var rules = new WarsmashTerrainRules(
-            _map,
-            rel => !string.IsNullOrEmpty(ResolvePath(rel)),
-            texture => TypeFor(texture).CliffModelDir,
-            texture => TypeFor(texture).RampModelDir,
-            (tag, authored) => Math.Clamp(authored, 0, WarsmashTerrainRules.CliffVariationMaximum.GetValueOrDefault(tag, 0)));
-        IReadOnlyList<WarsmashTerrainRules.CliffPlacement> placements = rules.RebuildCliffs();
-        foreach (WarsmashTerrainRules.CliffPlacement placement in placements)
+        foreach (WarsmashTerrainRules.CliffPlacement placement in BuildResult.Cliffs)
             Spawn(placement);
         CommitBatches();
         GD.Print($"WarsmashCliffRenderer(C#): spawned={_spawned}, missing={_missing}, batches={_batchCount}");
@@ -80,28 +78,10 @@ public partial class WarsmashCliffRenderer : Node3D
 
     public GDictionary get_counts() => GetCounts();
 
-    public void ApplyLighting(Vector3 direction, float ambient = 0.35f, float scale = 1.1f)
-    {
-        if (direction.LengthSquared() < 0.0001f)
-            direction = new Vector3(0.45f, 0.85f, 0.28f);
-        foreach (Node node in FindChildren("*", "MeshInstance3D", true, false))
-        {
-            if (node is MeshInstance3D { MaterialOverride: ShaderMaterial material })
-            {
-                material.SetShaderParameter("light_dir", direction.Normalized());
-                material.SetShaderParameter("light_ambient", ambient);
-                material.SetShaderParameter("light_scale", scale);
-            }
-        }
-    }
-
-    public void apply_lighting(Vector3 direction, float ambient = 0.35f, float scale = 1.1f) => ApplyLighting(direction, ambient, scale);
-
     public void SetFlatInspect(bool enabled)
     {
-        foreach (Node node in FindChildren("*", "MeshInstance3D", true, false))
-            if (node is MeshInstance3D { MaterialOverride: ShaderMaterial material })
-                material.SetShaderParameter("flat_lighting", enabled);
+        foreach (ShaderMaterial material in _materials)
+            material.SetShaderParameter("flat_lighting", enabled);
     }
 
     public void set_flat_inspect(bool enabled) => SetFlatInspect(enabled);
@@ -109,22 +89,11 @@ public partial class WarsmashCliffRenderer : Node3D
     private void Spawn(WarsmashTerrainRules.CliffPlacement placement)
     {
         string absolutePath = ResolvePath(placement.ModelPath);
-        if (string.IsNullOrEmpty(absolutePath))
-        {
-            _missing++;
-            return;
-        }
-        Script modelScript = GD.Load<Script>("res://addons/w3kit/w3_mdx_model.gd");
-        if (!_modelCache.TryGetValue(absolutePath, out Variant model))
-        {
-            model = modelScript.Call("load_file", absolutePath);
-            _modelCache[absolutePath] = model;
-        }
-        if (model.VariantType == Variant.Type.Nil)
-        {
-            _missing++;
-            return;
-        }
+        // Geometry is already decoded and retained by the build's asset adapter.
+        if (string.IsNullOrEmpty(absolutePath)) absolutePath = placement.ModelPath;
+        W3MdxModel? model = _assets!.LoadModel(placement.ModelPath);
+        if (model == null)
+            throw new InvalidOperationException($"Terrain build lost its decoded model: {placement.ModelPath}");
 
         var node = new Node3D
         {
@@ -139,11 +108,20 @@ public partial class WarsmashCliffRenderer : Node3D
         node.SetMeta("w3_placement_tile", new Vector2I(placement.X, placement.Y));
         AddChild(node);
 
-        Script instanceScript = GD.Load<Script>("res://addons/w3kit/w3_mdx_instance.gd");
-        var instance = new Node3D();
-        instance.SetScript(instanceScript);
+        // 悬崖实例直接构造 C# W3MdxInstance（GDS→C# 迁移后，w3_mdx_instance.gd 已删除）。
+        Node3D instance = new W3MdxInstance
+        {
+            StaticVertexTransform = (position, normal) =>
+            {
+                var result = TerrainSurfaceGeometry.DeformCliffVertex(_map, placement.X, placement.Y,
+                    new System.Numerics.Vector3(position.X, position.Y, position.Z),
+                    new System.Numerics.Vector3(normal.X, normal.Y, normal.Z));
+                return (new Vector3(result.Position.X, result.Position.Y, result.Position.Z),
+                    new Vector3(result.Normal.X, result.Normal.Y, result.Normal.Z));
+            },
+        };
         node.AddChild(instance);
-        CliffType type = TypeFor(placement.CliffTexture);
+        CliffTypeInfo type = _assets.TypeFor(placement.CliffTexture);
         // HiveWE/Warsmash HD terrain resolves cliff replaceables as DDS. The
         // tileset-prefixed BLP spelling is retained only for classic exports.
         string texturePath = $"{type.TextureDir}/{type.TextureFile}.dds";
@@ -154,27 +132,12 @@ public partial class WarsmashCliffRenderer : Node3D
                 texturePath = $"{type.TextureDir}/{type.TextureFile}.blp";
         }
         node.SetMeta("w3_texture_rel", texturePath);
-        float[] groundGrid = new float[9];
-        for (int gy = 0; gy < 3; gy++)
-        for (int gx = 0; gx < 3; gx++)
-        {
-            int cx = Math.Clamp(placement.X + gx, 0, _map.Width - 1);
-            int cy = Math.Clamp(placement.Y + gy, 0, _map.Height - 1);
-            groundGrid[gy * 3 + gx] = _map.GetCorner(cx, cy).GroundHeight;
-        }
-        W3TerrainMap.Corner p00 = _map.GetCorner(placement.X, placement.Y);
-        W3TerrainMap.Corner p10 = _map.GetCorner(placement.X + 1, placement.Y);
-        W3TerrainMap.Corner p01 = _map.GetCorner(placement.X, placement.Y + 1);
-        W3TerrainMap.Corner p11 = _map.GetCorner(placement.X + 1, placement.Y + 1);
         var options = new GDictionary
         {
             ["cliff_texture"] = texturePath,
             ["cliff_remap"] = true,
-            ["cliff_ground"] = new Vector4(p00.GroundHeight, p10.GroundHeight, p01.GroundHeight, p11.GroundHeight),
-            ["cliff_ground_grid"] = groundGrid,
-            ["cliff_ground_grid_size"] = new Vector2I(3, 3),
         };
-        instance.Call("setup", model, _textures!, absolutePath, options);
+        instance.Call("setup", Variant.From(model), _textures!, absolutePath, options);
         ConfigureMaterials(instance);
         AppendToBatch(placement, texturePath, node, instance);
         _spawned++;
@@ -189,12 +152,6 @@ public partial class WarsmashCliffRenderer : Node3D
         int chunkX = placement.X / BatchTileSize;
         int chunkY = placement.Y / BatchTileSize;
         string key = $"{chunkX}:{chunkY}:{texturePath}";
-        if (!_batchBuilders.TryGetValue(key, out CliffBatchBuilder? builder))
-        {
-            builder = new CliffBatchBuilder();
-            _batchBuilders[key] = builder;
-        }
-
         Transform3D rendererInverse = GlobalTransform.AffineInverse();
         foreach (Node child in instance.FindChildren("*", "MeshInstance3D", true, false))
         {
@@ -202,10 +159,21 @@ public partial class WarsmashCliffRenderer : Node3D
                 continue;
             Transform3D toRenderer = rendererInverse * source.GlobalTransform;
             for (int surface = 0; surface < source.Mesh.GetSurfaceCount(); surface++)
+            {
+                // MakeMaterial uses one cliff shader/albedo per texturePath.
+                // AppendFrom copies geometry, not the node's MaterialOverride.
+                Material material = source.GetActiveMaterial(surface);
+                if (!_batchBuilders.TryGetValue(key, out CliffBatchBuilder? builder))
+                {
+                    builder = new CliffBatchBuilder(material);
+                    _batchBuilders[key] = builder;
+                    if (material is ShaderMaterial shader) _materials.Add(shader);
+                }
                 builder.Surface.AppendFrom(source.Mesh, surface, toRenderer);
-            builder.Material ??= source.MaterialOverride ?? source.Mesh.SurfaceGetMaterial(0);
+            }
         }
-        builder.InstanceCount++;
+        if (_batchBuilders.TryGetValue(key, out CliffBatchBuilder? completed))
+            completed.InstanceCount++;
         placementNode.RemoveChild(instance);
         instance.QueueFree();
     }
@@ -218,11 +186,12 @@ public partial class WarsmashCliffRenderer : Node3D
             ArrayMesh mesh = pair.Value.Surface.Commit();
             if (mesh == null || mesh.GetSurfaceCount() == 0)
                 continue;
+            mesh.SurfaceSetMaterial(0, pair.Value.Material);
             var batch = new MeshInstance3D
             {
                 Name = $"CliffBatch_{index++}",
                 Mesh = mesh,
-                MaterialOverride = pair.Value.Material,
+                // 保留各 surface 材质，避免多 geoset 悬崖被单一材质覆盖
                 CastShadow = GeometryInstance3D.ShadowCastingSetting.On,
             };
             batch.SetMeta("w3_cliff_batch", true);
@@ -273,61 +242,6 @@ public partial class WarsmashCliffRenderer : Node3D
         }
     }
 
-    private void LoadCliffTypes()
-    {
-        string path = ResolvePath("TerrainArt/CliffTypes.slk");
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            return;
-        var headers = new Dictionary<int, string>();
-        var row = new Dictionary<int, string>();
-        int currentY = -1;
-        int idX = -1, modelX = -1, rampX = -1, textureDirX = -1, textureFileX = -1;
-        foreach (string rawLine in File.ReadLines(path))
-        {
-            string line = rawLine.Trim();
-            if (!line.StartsWith("C;", StringComparison.Ordinal)) continue;
-            int y = SlkInt(line, "Y");
-            int x = SlkInt(line, "X");
-            string value = SlkString(line, "K").Trim('"');
-            if (y > 0 && y != currentY)
-            {
-                CommitCliffRow(row, idX, modelX, rampX, textureDirX, textureFileX);
-                row.Clear();
-                currentY = y;
-            }
-            if (x <= 0) continue;
-            if (currentY == 1)
-            {
-                headers[x] = value;
-                switch (value)
-                {
-                    case "cliffID": idX = x; break;
-                    case "cliffModelDir": modelX = x; break;
-                    case "rampModelDir": rampX = x; break;
-                    case "texDir": textureDirX = x; break;
-                    case "texFile": textureFileX = x; break;
-                }
-            }
-            else if (currentY > 1) row[x] = value;
-        }
-        CommitCliffRow(row, idX, modelX, rampX, textureDirX, textureFileX);
-    }
-
-    private void CommitCliffRow(Dictionary<int, string> row, int idX, int modelX, int rampX, int textureDirX, int textureFileX)
-    {
-        if (idX < 0 || !row.TryGetValue(idX, out string? id) || string.IsNullOrEmpty(id)) return;
-        _types[id] = new CliffType(
-            row.GetValueOrDefault(modelX, "Cliffs"), row.GetValueOrDefault(rampX, "CliffTrans"),
-            row.GetValueOrDefault(textureDirX, "ReplaceableTextures/Cliff").Replace('\\', '/'),
-            row.GetValueOrDefault(textureFileX, "Cliff0"));
-    }
-
-    private CliffType TypeFor(int texture)
-    {
-        string id = texture >= 0 && texture < _map!.CliffTilesets.Count ? _map.CliffTilesets[texture] : "CLdi";
-        return _types.GetValueOrDefault(id, new CliffType("Cliffs", "CliffTrans", "ReplaceableTextures/Cliff", "Cliff0"));
-    }
-
     /// <summary>GDScript side injects the archive/level before build().</summary>
     public void SetPathResolver(GodotObject? resolver) => _pathResolver = resolver;
 
@@ -339,18 +253,17 @@ public partial class WarsmashCliffRenderer : Node3D
         if (resolver != null && resolver.HasMethod("resolve_path"))
             return resolver.Call("resolve_path", relative).AsString();
         // Bare W3EMap resource (no archive attached): fall back to the shared
-        // game-asset roots, matching W3CliffBuilder's W3Paths.resolve_path.
-        var paths = GD.Load<GDScript>("res://addons/w3kit/w3_paths.gd");
-        return paths.Call("resolve_game_path", relative).AsString();
+        // game-asset roots (classic → Reforged), matching the archive's own resolve_path.
+        return new Diablo1Like.W3.Paths.W3PathResolverBridge().ResolveGamePath(relative);
     }
 
     private void ClearRenderer()
     {
         foreach (Node child in GetChildren()) child.QueueFree();
-        foreach (Variant model in _modelCache.Values) model.Dispose();
-        _modelCache.Clear();
+        _assets = null;
+        BuildResult = null;
+        _materials.Clear();
         _batchBuilders.Clear();
-        _types.Clear();
         _map = null;
         _mapResource = null;
         _textures = null;
@@ -361,29 +274,4 @@ public partial class WarsmashCliffRenderer : Node3D
         _batchCount = 0;
     }
 
-    private static int SlkInt(string line, string key)
-    {
-        string token = ";" + key;
-        int start = line.IndexOf(token, StringComparison.Ordinal);
-        if (start < 0) return -1;
-        start += token.Length;
-        int end = line.IndexOf(';', start);
-        string value = end < 0 ? line[start..] : line[start..end];
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result) ? result : -1;
-    }
-
-    private static string SlkString(string line, string key)
-    {
-        string token = ";" + key;
-        int start = line.IndexOf(token, StringComparison.Ordinal);
-        if (start < 0) return string.Empty;
-        start += token.Length;
-        if (start < line.Length && line[start] == '"')
-        {
-            int endQuote = line.IndexOf('"', start + 1);
-            return endQuote > start ? line[start..(endQuote + 1)] : line[start..];
-        }
-        int end = line.IndexOf(';', start);
-        return end < 0 ? line[start..] : line[start..end];
-    }
 }

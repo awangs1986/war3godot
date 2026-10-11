@@ -160,7 +160,9 @@ public sealed class GroundLayout
         W3TerrainMap.Corner own = _map.GetCorner(x, y);
         if (aRomp || (aCliff && !own.Ramp))
         {
-            int texture = own.CliffTexture;
+            // HiveWE reads AUTHORED corner_cliff_texture. The cliff scheduler's
+            // derived ramp textures must never enter this ownership lookup.
+            int texture = _rules.AuthoredCliffTexture(x, y);
             if (texture == 15)
                 texture -= 14;
             return texture >= 0 && texture < _cliffToGround.Count ? _cliffToGround[texture] : 0;

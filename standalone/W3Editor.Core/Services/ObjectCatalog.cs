@@ -1,5 +1,6 @@
 using System.Globalization;
 using W3Editor.Rendering;
+using W3Editor.Contracts;
 
 namespace W3Editor.Services;
 
@@ -48,7 +49,7 @@ public sealed class UnitTypeInfo
 /// via the stock SLKs plus the Reforged skin INIs, with the same
 /// stem+variation → .mdx candidate rules (_pick_variation_path).
 /// </summary>
-public sealed class ObjectCatalog : IObjectCatalog
+public sealed class ObjectCatalog : IObjectCatalog, IWarcraftObjectDatabase
 {
     /// <summary>WE palette category letters (Doodads.slk category / DestructableData.slk category).</summary>
     public static readonly (char Letter, string Name)[] DoodadCategories =
@@ -74,6 +75,8 @@ public sealed class ObjectCatalog : IObjectCatalog
     private readonly Dictionary<string, UnitTypeInfo> _unitById = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _resolveCache = new(StringComparer.Ordinal);
     private readonly EditorAssets _assets;
+    private readonly Dictionary<WarcraftObjectKind, IReadOnlyList<WarcraftObjectDefinition>> _editorObjects = new();
+    private readonly Dictionary<WarcraftObjectKind, IReadOnlyList<WarcraftFieldDefinition>> _editorFields = new();
 
     public ObjectCatalog(EditorAssets assets)
     {
@@ -90,6 +93,62 @@ public sealed class ObjectCatalog : IObjectCatalog
             if (fields.TryGetValue("file", out string? file)) unit.ModelStem = file;
             if (fields.TryGetValue("modelscale", out string? s) && ParseF(s) is { } v && v > 0.0001f) unit.ModelScale = v;
         });
+        BuildEditorDatabase();
+    }
+
+    public IReadOnlyList<WarcraftObjectDefinition> Objects(WarcraftObjectKind kind) =>
+        _editorObjects.GetValueOrDefault(kind) ?? Array.Empty<WarcraftObjectDefinition>();
+
+    public IReadOnlyList<WarcraftFieldDefinition> Fields(WarcraftObjectKind kind) =>
+        _editorFields.GetValueOrDefault(kind) ?? Array.Empty<WarcraftFieldDefinition>();
+
+    private void BuildEditorDatabase()
+    {
+        _editorObjects[WarcraftObjectKind.Units] = Units.Select(unit =>
+            new WarcraftObjectDefinition(unit.Id, unit.Name, unit.Race)).ToArray();
+        _editorObjects[WarcraftObjectKind.Doodads] = Doodads.Where(item => !item.IsDestructible).Select(item =>
+            new WarcraftObjectDefinition(item.Id, item.Name, item.Category.ToString())).ToArray();
+        _editorObjects[WarcraftObjectKind.Destructibles] = Doodads.Where(item => item.IsDestructible).Select(item =>
+            new WarcraftObjectDefinition(item.Id, item.Name, item.Category.ToString())).ToArray();
+
+        LoadEditorObjects(WarcraftObjectKind.Items, "Units/ItemData.slk", "itemID", "comment", "class");
+        LoadEditorObjects(WarcraftObjectKind.Abilities, "Units/AbilityData.slk", "alias", "comments", "race");
+        LoadEditorObjects(WarcraftObjectKind.Upgrades, "Units/UpgradeData.slk", "upgradeid", "comments", "race");
+        LoadEditorObjects(WarcraftObjectKind.Buffs, "Units/AbilityBuffData.slk", "alias", "comments", "race");
+
+        LoadEditorFields(WarcraftObjectKind.Units, "Units/UnitMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Items, "Units/ItemMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Abilities, "Units/AbilityMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Destructibles, "Units/DestructableMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Doodads, "Doodads/DoodadMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Upgrades, "Units/UpgradeMetaData.slk");
+        LoadEditorFields(WarcraftObjectKind.Buffs, "Units/AbilityBuffMetaData.slk");
+    }
+
+    private void LoadEditorObjects(WarcraftObjectKind kind, string path, string idColumn, string nameColumn, string groupColumn)
+    {
+        string? resolved = _assets.ResolveDataFile(path);
+        if (resolved == null) return;
+        _editorObjects[kind] = SlkRows(File.ReadAllText(resolved), idColumn)
+            .Select(row => new WarcraftObjectDefinition(
+                row.GetValueOrDefault(idColumn, ""),
+                row.GetValueOrDefault(nameColumn, row.GetValueOrDefault(idColumn, "")),
+                row.GetValueOrDefault(groupColumn, "未分类")))
+            .Where(item => item.Id.Length == 4).ToArray();
+    }
+
+    private void LoadEditorFields(WarcraftObjectKind kind, string path)
+    {
+        string? resolved = _assets.ResolveDataFile(path);
+        if (resolved == null) return;
+        _editorFields[kind] = SlkRows(File.ReadAllText(resolved), "ID")
+            .Select(row => new WarcraftFieldDefinition(
+                row.GetValueOrDefault("ID", ""), row.GetValueOrDefault("field", ""),
+                row.GetValueOrDefault("displayName", row.GetValueOrDefault("field", "")),
+                row.GetValueOrDefault("type", "string"), row.GetValueOrDefault("category", ""),
+                row.GetValueOrDefault("repeat", "0")))
+            .Where(field => field.Id.Length is >= 1 and <= 4)
+            .OrderBy(field => field.Category).ThenBy(field => field.DisplayName).ToArray();
     }
 
     public DoodadTypeInfo? FindDoodad(string id) => _doodadById.GetValueOrDefault(id);

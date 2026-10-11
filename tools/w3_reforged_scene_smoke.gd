@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 
 
 func _initialize() -> void:
@@ -34,7 +34,7 @@ func _run() -> void:
 		return
 	# Mobile map units live in the simulation layer now; only buildings and
 	# flying units stay in the batcher's animated pool.
-	var game = scene.get("_game")
+	var game = scene.get_game()
 	var sim_units: int = game.sim.get_units().size() if game != null else 0
 	if int(counts.animated) + sim_units < 100:
 		_fail("animated units were not spawned: batcher=%s sim=%d" % [counts, sim_units])
@@ -50,10 +50,7 @@ func _run() -> void:
 		if instance._animate and (instance._skeleton == null or instance._skeleton.get_bone_count() == 0):
 			_fail("animated unit missing GPU skeleton")
 			return
-	var broken_views := 0
-	for view in game.renderer._views.values():
-		if view["mdx"] == null:
-			broken_views += 1
+	var broken_views: int = game.renderer.broken_view_count() if game != null else 0
 	if broken_views > 0:
 		_fail("%d simulated units have no renderable model" % broken_views)
 		return

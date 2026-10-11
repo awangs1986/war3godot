@@ -1,8 +1,8 @@
-extends SceneTree
+﻿extends SceneTree
 ## Which decode path do the red frames take? Print resolved path, sidecar PNG
 ## existence, jpg cache key, and cache-file color for frames 02..05.
 
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
 
 
 func _initialize() -> void:
@@ -10,7 +10,7 @@ func _initialize() -> void:
 	print("cache dir: ", cache_dir)
 	for frame in [2, 3, 4, 5, 27, 30]:
 		var rel := "ReplaceableTextures/Water/Water%02d.blp" % frame
-		var absolute := W3Paths.resolve_path(rel)
+		var absolute := W3Paths.new().resolve_path(rel)
 		var png := absolute.get_basename() + ".png"
 		var f := FileAccess.open(absolute, FileAccess.READ)
 		var bytes := f.get_buffer(f.get_length())

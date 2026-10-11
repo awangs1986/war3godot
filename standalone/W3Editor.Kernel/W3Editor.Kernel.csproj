@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The non-removable minimum: module loading, document/parts, transactions,
+       atomic multi-file save, capability registry. No UI, no map formats —
+       formats live in modules, algorithms live in W3TerrainCore. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>W3Editor.Kernel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

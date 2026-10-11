@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3DooParser = preload("res://addons/w3kit/w3_doo_parser.gd")
-const W3ObjectCatalog = preload("res://addons/w3kit/w3_object_catalog.gd")
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
+const W3DooParser = preload("res://addons/w3kit_cs/Formats/W3DooParserBridge.cs")
+const W3ObjectCatalog = preload("res://addons/w3kit_cs/Assets/W3ObjectCatalog.cs")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
 
 
 func _initialize() -> void:
@@ -37,7 +37,7 @@ func _initialize() -> void:
 	var required_textures: Dictionary = {}
 	var attachment_dependencies := 0
 	for path in paths:
-		var hd_path := W3Paths.resolve_reforged_path(str(path))
+		var hd_path := W3Paths.new().resolve_reforged_path(str(path))
 		if not hd_path.is_empty():
 			hd_models += 1
 			var parsed_model = W3MdxModel.load_file(hd_path)
@@ -47,7 +47,7 @@ func _initialize() -> void:
 				for attachment in parsed_model.attachments:
 					if not str(attachment.path).is_empty():
 						attachment_dependencies += 1
-		elif not W3Paths.resolve_path(str(path)).is_empty():
+		elif not W3Paths.new().resolve_path(str(path)).is_empty():
 			classic_models += 1
 		else:
 			missing_models += 1
@@ -58,7 +58,7 @@ func _initialize() -> void:
 	var missing_textures := 0
 	var invalid_textures := 0
 	for rel in required_textures:
-		var texture_path := W3Paths.resolve_reforged_path(str(rel))
+		var texture_path := W3Paths.new().resolve_reforged_path(str(rel))
 		if texture_path.is_empty():
 			missing_textures += 1
 			printerr("CASC_TEXTURE_MISSING\t", rel)
@@ -107,7 +107,7 @@ func _hd_texture_rel(model, texture_index: int, slot: int) -> String:
 		return "ReplaceableTextures/TeamColor/TeamColor00.dds"
 	if rid == 2:
 		return "ReplaceableTextures/TeamGlow/TeamGlow00.dds"
-	var stem := str(W3MdxModel.REPLACEABLE_STEMS.get(rid, ""))
+	var stem := str(W3MdxModel.replaceable_stem(rid))
 	if stem.is_empty():
 		return "Textures/White.dds"
 	var suffix := ""

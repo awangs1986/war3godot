@@ -1,8 +1,8 @@
-extends SceneTree
+﻿extends SceneTree
 func _initialize():
 	call_deferred("r")
 func r():
-	var W3E = load("res://addons/w3kit/w3e_map.gd")
+	var W3E = load("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
 	var path = ProjectSettings.globalize_path("res://war3/maps/DotA_v6.80c/war3map.w3e")
 	var map = W3E.load_file(path)
 	var n=0; var samples=[]
@@ -13,7 +13,7 @@ func r():
 			if not c00.water: continue
 			n+=1
 			var wy=(c00.water_height-0.7)*128.0
-			var gy=c00.world_y()
+			var gy=c00.world_y(128.0) # C# 默认参数在 GDScript 侧不生效
 			var d=wy-gy
 			omin=minf(omin,d); omax=maxf(omax,d)
 			if samples.size()<8:

@@ -26,10 +26,6 @@ uniform float tile_size = 128.0;
 uniform vec2 map_origin = vec2(0.0);
 uniform vec2 map_size = vec2(1.0);
 uniform bool shd_enabled = true;
-uniform vec3 light_dir = vec3(0.45, 0.85, 0.28);
-uniform float light_ambient = 0.35;
-uniform float light_scale = 1.1;
-uniform vec3 light_color = vec3(1.0, 1.0, 1.0);
 /// Dye overlay alpha by corner bitset: BR=red BL=green TR=blue TL=yellow.
 uniform bool soft_tint = false;
 uniform bool debug_tile_coords = false;
@@ -42,7 +38,6 @@ const float ARRAY_BANK_SIZE = 256.0;
 varying vec2 v_local;
 varying flat ivec2 v_tile;
 varying vec3 v_world_pos;
-varying vec3 v_normal;
 
 float sample_height(ivec2 corner) {
 	corner = clamp(corner, ivec2(0), map_corners - ivec2(1));
@@ -76,11 +71,6 @@ vec4 sample_layer(float layer_f, vec2 local) {
 		return texture(ground_array1, vec3(uv, layer_f - ARRAY_BANK_SIZE));
 	}
 	return texture(ground_array2, vec3(uv, layer_f - ARRAY_BANK_SIZE * 2.0));
-}
-
-float ground_lighting(vec3 n, vec3 ldir) {
-	float ndotl = max(dot(n, normalize(ldir)), 0.0);
-	return min(1.0, mix(light_ambient, 1.0, ndotl) * light_scale);
 }
 
 vec3 bitset_tint(int bits) {
@@ -140,7 +130,6 @@ void vertex() {
 	float hU = sample_nheight(cc + ivec2(0, 1));
 	vec3 n = normalize(vec3(hL - hR, 2.0 * tile_size, hD - hU));
 	NORMAL = n;
-	v_normal = n;
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -186,6 +175,9 @@ void fragment() {
 		ALBEDO = vec3(0.0);
 		EMISSION = base_color;
 		AO = 1.0;
+		METALLIC = 0.0;
+		SPECULAR = 0.0;
+		ROUGHNESS = 1.0;
 	} else {
 		ALBEDO = base_color;
 		ROUGHNESS = 0.94;

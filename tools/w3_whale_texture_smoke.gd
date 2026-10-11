@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3BlpDecoder = preload("res://addons/w3kit/w3_blp_decoder.gd")
-const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
+const W3BlpDecoder = preload("res://addons/w3kit_cs/Assets/BlpDecoderBridge.cs")
+const W3MdxInstance = preload("res://addons/w3kit_cs/Mdx/W3MdxInstance.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
 
 
 func _initialize() -> void:
@@ -26,7 +26,7 @@ func _initialize() -> void:
 	)
 	var instance := W3MdxInstance.new()
 	root.add_child(instance)
-	instance.setup(W3MdxModel.load_file(model_path), provider, model_path)
+	instance.setup(W3MdxModel.load_file(model_path), provider, model_path, {})
 	if instance._geoset_nodes.size() != 1:
 		printerr("WHALE_TEXTURE_FAIL geosets=", instance._geoset_nodes.size())
 		quit(1)

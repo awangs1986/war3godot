@@ -23,6 +23,7 @@ namespace W3Editor.Rendering;
 /// </summary>
 public sealed class GlTerrainViewport : OpenGlControlBase
 {
+    public void RequestRender() => RequestNextFrameRendering();
     public GlTerrainScene Scene { get; } = new();
 
     public enum ViewportTool
@@ -56,7 +57,7 @@ public sealed class GlTerrainViewport : OpenGlControlBase
     private readonly System.Collections.Concurrent.ConcurrentQueue<
         (string Path, int Width, int Height, TaskCompletionSource<string?> Tcs)> _captureQueue = new();
     private readonly System.Collections.Concurrent.ConcurrentQueue<
-        (Formats.W3Placement Proto, int Size, TaskCompletionSource<byte[]?> Tcs)> _thumbQueue = new();
+        (W3Compat.Formats.W3Placement Proto, int Size, TaskCompletionSource<byte[]?> Tcs)> _thumbQueue = new();
     private Point _lastPointer;
     private bool _rotating;
     private bool _panning;
@@ -181,7 +182,7 @@ public sealed class GlTerrainViewport : OpenGlControlBase
     }
 
     /// <summary>Queues an offscreen palette thumbnail (bottom-up RGBA); null when unavailable.</summary>
-    public Task<byte[]?> RenderThumbnailAsync(Formats.W3Placement proto, int size)
+    public Task<byte[]?> RenderThumbnailAsync(W3Compat.Formats.W3Placement proto, int size)
     {
         if (!_initialized || _failed)
             return Task.FromResult<byte[]?>(null);
@@ -195,10 +196,10 @@ public sealed class GlTerrainViewport : OpenGlControlBase
     private void ApplyKeyPan(float delta)
     {
         float right = 0f, forward = 0f;
-        if (_keys.Contains(Key.Left)) right -= 1f;
-        if (_keys.Contains(Key.Right)) right += 1f;
-        if (_keys.Contains(Key.Up)) forward -= 1f;
-        if (_keys.Contains(Key.Down)) forward += 1f;
+        if (_keys.Contains(Key.Left) || _keys.Contains(Key.A)) right -= 1f;
+        if (_keys.Contains(Key.Right) || _keys.Contains(Key.D)) right += 1f;
+        if (_keys.Contains(Key.Up) || _keys.Contains(Key.W)) forward -= 1f;
+        if (_keys.Contains(Key.Down) || _keys.Contains(Key.S)) forward += 1f;
         Scene.Camera.KeyPan(right, forward, delta);
     }
 
@@ -231,7 +232,7 @@ public sealed class GlTerrainViewport : OpenGlControlBase
             Scene.ShowGrid = !Scene.ShowGrid;
             e.Handled = true;
         }
-        else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        else if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.W or Key.A or Key.S or Key.D)
         {
             e.Handled = true;
         }

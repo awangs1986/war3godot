@@ -14,14 +14,20 @@ Details: [docs/GOALS.md](docs/GOALS.md) · Roadmap: [docs/ROADMAP_P0_P5.md](docs
 Requires **Godot 4.7**. CI runs the same engine line.
 
 ## War3 assets
+Resource version and directory requirements: [war3/README.md](war3/README.md).
+The recorded source install is `C:\Warcraft.III.R`;
+use **Warcraft III: Reforged 1.32.10.18820** as the resource baseline.
+The installation metadata, game executable and World Editor executable all
+report this version (verified 2026-10-10). Other builds are not covered by this baseline.
+
 See [docs/w3_0.1.md](docs/w3_0.1.md). Requires your own unpacked War3 files for textures/models; maps via `.w3x` (7z) or folder. **JASS not executed.**
 
 ```bash
 godot --headless --path . -s res://tools/check_asset_root.gd
-godot --headless --path . -s res://tools/w3_regression.gd
-godot --headless --path . -s res://tools/w3_smoke.gd
-godot --headless --path . -s res://tools/w3_regression.gd
-godot --headless --path . -s res://tools/w3_level_runtime_smoke.gd
+godot --headless --path . res://tools/w3_ground_crosscheck.tscn -- --asset-free
+godot --headless --path . res://tools/w3_regression.tscn
+godot --headless --path . res://tools/w3_smoke.tscn
+godot --headless --path . res://tools/w3_level_runtime_smoke.tscn
 ```
 
 ## Import pipeline

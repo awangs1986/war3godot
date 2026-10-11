@@ -12,6 +12,8 @@ public interface IEditCommand
     (int X0, int Y0, int X1, int Y1)? AffectedRegion(W3EMap map);
     /// <summary>True when the command touched doodad/unit placements.</summary>
     bool TouchesPlacements { get; }
+    bool TouchesPathing => false;
+    bool TouchesRegions => false;
 }
 
 /// <summary>
@@ -25,6 +27,7 @@ public sealed class EditHistory
     private readonly List<IEditCommand> _undo = new();
     private readonly List<IEditCommand> _redo = new();
     private byte[]? _pending; // packed corners at stroke start
+    private byte[]? _pendingPathing;
     private IEditCommand? _lastApplied;
 
     public bool CanUndo => _undo.Count > 0;
@@ -36,6 +39,7 @@ public sealed class EditHistory
         _undo.Clear();
         _redo.Clear();
         _pending = null;
+        _pendingPathing = null;
         _lastApplied = null;
         Changed?.Invoke();
     }
@@ -59,6 +63,19 @@ public sealed class EditHistory
         if (_pending == null) return;
         var command = TerrainStrokeCommand.FromSnapshots(_pending, map);
         _pending = null;
+        if (command != null)
+            Push(command);
+        else
+            Changed?.Invoke();
+    }
+
+    public void BeginPathingStroke(W3PathingMap map) => _pendingPathing = (byte[])map.Cells.Clone();
+
+    public void CommitPathingStroke(W3PathingMap map)
+    {
+        if (_pendingPathing == null) return;
+        PathingStrokeCommand? command = PathingStrokeCommand.FromSnapshots(_pendingPathing, map);
+        _pendingPathing = null;
         if (command != null)
             Push(command);
         else
@@ -94,6 +111,82 @@ public sealed class EditHistory
         _lastApplied?.AffectedRegion(map);
 
     public bool LastTouchedPlacements => _lastApplied?.TouchesPlacements ?? false;
+    public bool LastTouchedPathing => _lastApplied?.TouchesPathing ?? false;
+    public bool LastTouchedRegions => _lastApplied?.TouchesRegions ?? false;
+}
+
+/// <summary>Pathing brush stroke: only changed WPM cells are retained.</summary>
+public sealed class PathingStrokeCommand : IEditCommand
+{
+    private readonly int[] _indices;
+    private readonly byte[] _before;
+    private readonly byte[] _after;
+
+    private PathingStrokeCommand(int[] indices, byte[] before, byte[] after)
+    {
+        _indices = indices;
+        _before = before;
+        _after = after;
+    }
+
+    public bool TouchesPlacements => false;
+    public bool TouchesPathing => true;
+    public (int X0, int Y0, int X1, int Y1)? AffectedRegion(W3EMap map) => null;
+
+    public static PathingStrokeCommand? FromSnapshots(byte[] beforeAll, W3PathingMap map)
+    {
+        int count = Math.Min(beforeAll.Length, map.Cells.Length);
+        var indices = new List<int>();
+        for (int i = 0; i < count; i++)
+            if (beforeAll[i] != map.Cells[i])
+                indices.Add(i);
+        if (indices.Count == 0)
+            return null;
+        return new PathingStrokeCommand(
+            indices.ToArray(),
+            indices.Select(index => beforeAll[index]).ToArray(),
+            indices.Select(index => map.Cells[index]).ToArray());
+    }
+
+    public void Undo(MapSession session) => Apply(session, _before);
+    public void Redo(MapSession session) => Apply(session, _after);
+
+    private void Apply(MapSession session, byte[] values)
+    {
+        W3PathingMap map = session.Pathing
+            ?? throw new InvalidOperationException("Pathing command has no WPM target.");
+        for (int i = 0; i < _indices.Length; i++)
+            if (_indices[i] < map.Cells.Length)
+                map.Cells[_indices[i]] = values[i];
+        session.MarkPathingDirty();
+    }
+}
+
+/// <summary>Undoable region add/delete/rename using lossless record snapshots.</summary>
+public sealed class RegionsSnapshotCommand : IEditCommand
+{
+    private readonly W3RegionRecord[] _before;
+    private readonly W3RegionRecord[] _after;
+
+    public RegionsSnapshotCommand(IEnumerable<W3RegionRecord> before, IEnumerable<W3RegionRecord> after)
+    {
+        _before = before.Select(region => region.Clone()).ToArray();
+        _after = after.Select(region => region.Clone()).ToArray();
+    }
+
+    public bool TouchesPlacements => false;
+    public bool TouchesRegions => true;
+    public (int X0, int Y0, int X1, int Y1)? AffectedRegion(W3EMap map) => null;
+    public void Undo(MapSession session) => Apply(session, _before);
+    public void Redo(MapSession session) => Apply(session, _after);
+
+    private static void Apply(MapSession session, IEnumerable<W3RegionRecord> snapshot)
+    {
+        W3RegionsFile regions = session.EnsureRegions();
+        regions.Regions.Clear();
+        regions.Regions.AddRange(snapshot.Select(region => region.Clone()));
+        session.MarkRegionsDirty();
+    }
 }
 
 /// <summary>Terrain stroke: lossless per-corner deltas.</summary>

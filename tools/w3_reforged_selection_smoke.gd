@@ -1,21 +1,21 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3MapInfoVersion = preload("res://addons/w3kit/w3_map_info_version.gd")
-const W3DooParser = preload("res://addons/w3kit/w3_doo_parser.gd")
-const W3ObjectCatalog = preload("res://addons/w3kit/w3_object_catalog.gd")
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+const W3MapInfoVersion = preload("res://addons/w3kit_cs/Formats/W3MapInfoVersionBridge.cs")
+const W3DooParser = preload("res://addons/w3kit_cs/Formats/W3DooParserBridge.cs")
+const W3ObjectCatalog = preload("res://addons/w3kit_cs/Assets/W3ObjectCatalog.cs")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
 
 
 func _initialize() -> void:
-	var info := W3MapInfoVersion.parse(_make_w3i_header(28, 1, 32, 10, 18820))
+	var info := W3MapInfoVersion.ParseStatic(_make_w3i_header(28, 1, 32, 10, 18820))
 	_assert(bool(info.valid), "synthetic W3I header rejected")
-	_assert(W3MapInfoVersion.has_reforged_skin_ids(info), "1.32 skin gate not enabled")
+	_assert(W3MapInfoVersion.HasReforgedSkinIdsStatic(info), "1.32 skin gate not enabled")
 
 	var classic_file := FileAccess.open("res://war3/maps/LostTemple/source/war3map.w3i", FileAccess.READ)
 	_assert(classic_file != null, "Lost Temple W3I missing")
-	var classic := W3MapInfoVersion.parse(classic_file.get_buffer(classic_file.get_length()))
+	var classic := W3MapInfoVersion.ParseStatic(classic_file.get_buffer(classic_file.get_length()))
 	_assert(int(classic.format_version) == 18, "Lost Temple W3I version changed")
-	_assert(not W3MapInfoVersion.has_reforged_skin_ids(classic), "classic map incorrectly enables skin IDs")
+	_assert(not W3MapInfoVersion.HasReforgedSkinIdsStatic(classic), "classic map incorrectly enables skin IDs")
 
 	var placements := W3DooParser.parse_doodads(_make_reforged_doodad(), 1, 32)
 	_assert(placements.size() == 1, "Reforged doodad record desynchronized")
@@ -26,7 +26,7 @@ func _initialize() -> void:
 	var catalog = W3ObjectCatalog.new()
 	catalog.load_from_roots(null)
 	var footman_rel := catalog.resolve_model("hfoo", true, 0)
-	var footman_abs := W3Paths.resolve_game_path(footman_rel).replace("\\", "/")
+	var footman_abs := W3Paths.new().resolve_game_path(footman_rel).replace("\\", "/")
 	_assert(footman_abs.to_lower().contains("/war3/reforged/"), "HD model did not override classic model")
 	_assert(footman_abs.to_lower().ends_with("/units/human/footman/footman.mdx"), "wrong Footman HD path")
 	var jaina_skin_rel := catalog.resolve_model("Hjas", true, 0).replace("\\", "/")

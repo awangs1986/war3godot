@@ -1,12 +1,12 @@
 extends SceneTree
 
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3GpuTerrain = preload("res://addons/w3kit/w3_gpu_terrain.gd")
-const W3CliffBuilder = preload("res://addons/w3kit/w3_cliff_builder.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
-const W3HeightSampler = preload("res://addons/w3kit/w3_height_sampler.gd")
-const W3DooParser = preload("res://addons/w3kit/w3_doo_parser.gd")
-const W3ObjectCatalog = preload("res://addons/w3kit/w3_object_catalog.gd")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3GpuTerrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs")
+const W3CliffBuilder = preload("res://addons/w3kit_cs/Terrain/WarsmashCliffRenderer.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
+const W3HeightSampler = preload("res://addons/w3kit_cs/Terrain/W3HeightSamplerBridge.cs")
+const W3DooParser = preload("res://addons/w3kit_cs/Formats/W3DooParserBridge.cs")
+const W3ObjectCatalog = preload("res://addons/w3kit_cs/Assets/W3ObjectCatalog.cs")
 
 
 func _initialize() -> void:
@@ -21,8 +21,9 @@ func _read_bytes(path: String) -> PackedByteArray:
 func _run() -> void:
 	var level = W3EMap.load_file(ProjectSettings.globalize_path("res://war3/maps/LostTemple/source/war3map.w3e"))
 	var provider := W3TextureProvider.new()
-	var sampler := W3HeightSampler.new(level)
-	provider.load_terrain_slk()
+	var sampler := W3HeightSampler.new() # C# 带参构造在 GDScript 侧不可用
+	sampler.bind_map(level)
+	provider.load_terrain_slk("")
 	var terrain := W3GpuTerrain.new()
 	terrain.map = level
 	terrain.textures = provider
@@ -44,9 +45,9 @@ func _run() -> void:
 
 	var shd := _read_bytes("res://war3/maps/LostTemple/source/war3map.shd")
 	var shd_w: int = int(level.tile_count_x()) * 4
-	var doodads := W3DooParser.parse_doodads(_read_bytes("res://war3/maps/LostTemple/source/war3map.doo"))
+	var doodads := W3DooParser.parse_doodads(_read_bytes("res://war3/maps/LostTemple/source/war3map.doo"), 0, 0)
 	var catalog := W3ObjectCatalog.new()
-	catalog.load_from_roots()
+	catalog.load_from_roots(null)
 	for p in [Vector2i(70, 114), Vector2i(73, 114), Vector2i(74, 114), Vector2i(77, 114)]:
 		var corners: Array[String] = []
 		for cp in [p, p + Vector2i(1, 0), p + Vector2i(0, 1), p + Vector2i(1, 1)]:

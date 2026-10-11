@@ -1,11 +1,11 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
 
 
 func _initialize() -> void:
 	var requested := "Units/Human/Gyrocopter/CopterBladeBlur.png"
-	var resolved := W3Paths.resolve_path(requested).replace("\\", "/")
+	var resolved := W3Paths.new().resolve_path(requested).replace("\\", "/")
 	if resolved.is_empty() or not resolved.contains("/Units/Human/GyroCopter/CopterBladeBlur.png"):
 		push_error("W3_PATH_CASE_SMOKE_FAIL %s -> %s" % [requested, resolved])
 		quit(1)

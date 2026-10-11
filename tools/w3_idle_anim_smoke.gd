@@ -2,8 +2,8 @@ extends SceneTree
 ## godot --headless --path . -s res://tools/w3_idle_anim_smoke.gd
 ## Uses a classic creep model to guard the Warsmash-style Stand selection path.
 
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3MdxInstance = preload("res://addons/w3kit_cs/Mdx/W3MdxInstance.cs")
 
 
 func _init() -> void:

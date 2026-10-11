@@ -16,6 +16,10 @@ public sealed class CaptureTools(EditorSession session)
         [Description("Optional absolute PNG output path; default %TEMP%\\w3editor\\shot_*.png (override via W3EDITOR_OUT_DIR)")] string? outputPath = null,
         [Description("Top-down view of the whole map (default: perspective from the map center)")] bool topdown = false,
         CancellationToken cancellationToken = default)
+        => await session.LockedAsync(() => Screenshot3dCore(outputPath, topdown, cancellationToken), cancellationToken);
+
+    private async Task<CallToolResult> Screenshot3dCore(
+        string? outputPath, bool topdown, CancellationToken cancellationToken)
     {
         // Fast path: resident editor with control port.
         if (await EditorIpcClient.IsAliveAsync(cancellationToken))
@@ -63,7 +67,9 @@ public sealed class CaptureTools(EditorSession session)
         if (await EditorIpcClient.IsAliveAsync(cancellationToken))
             return $"already running at {EditorIpcClient.BaseUrl}";
         string path = mapPath
-            ?? (session.Map.IsOpen ? session.Map.SourcePath : throw new InvalidOperationException("no map open; pass mapPath"));
+            ?? session.Locked(() => session.Map.IsOpen
+                ? session.Map.SourcePath
+                : throw new InvalidOperationException("no map open; pass mapPath"));
         int pid = await EditorIpcClient.LaunchResidentAsync(path, cancellationToken);
         return $"launched pid={pid}, control port {EditorIpcClient.BaseUrl}, map={path}";
     }

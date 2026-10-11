@@ -17,6 +17,16 @@
     <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
     <ProjectReference Include="..\W3Editor.PluginContracts\W3Editor.PluginContracts.csproj" />
     <ProjectReference Include="..\..\plugins\FbxImportPlugin\FbxImportPlugin.csproj" />
+    <!-- Module architecture: the kernel plus the bootstrap module assemblies,
+         so the module host acceptance gate can load them from the output dir. -->
+    <ProjectReference Include="..\W3Editor.Contracts\W3Editor.Contracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Kernel\W3Editor.Kernel.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Terrain\W3Editor.Modules.Terrain.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Placement\W3Editor.Modules.Placement.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.WorldData\W3Editor.Modules.WorldData.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Ui\W3Editor.Modules.Ui.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Objects\W3Editor.Modules.Objects.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Data\W3Editor.Modules.Data.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 
-const W3MdxAnim = preload("res://addons/w3kit/w3_mdx_anim.gd")
-const W3MdxInstance = preload("res://addons/w3kit/w3_mdx_instance.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
+const W3MdxAnim = preload("res://addons/w3kit_cs/Mdx/W3MdxAnim.cs")
+const W3MdxInstance = preload("res://addons/w3kit_cs/Mdx/W3MdxInstance.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
 
 
 func _initialize() -> void:

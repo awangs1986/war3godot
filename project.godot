@@ -22,10 +22,9 @@ config/icon="res://icon.svg"
 
 [autoload]
 
-GameState="*res://scripts/autoload/game_state.gd"
-ItemDB="*res://scripts/autoload/item_db.gd"
-W3AssetConfig="*res://addons/w3kit/w3_asset_config.gd"
-W3Kit="*res://addons/w3kit/w3kit_boot.gd"
+GameState="*res://runtime/Autoload/GameState.cs"
+ItemDB="*res://runtime/Autoload/ItemDatabase.cs"
+W3AssetConfig="*res://addons/w3kit_cs/Config/W3AssetConfiguration.cs"
 
 [display]
 

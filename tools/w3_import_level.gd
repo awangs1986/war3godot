@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Usage: godot --headless --path . --script res://tools/w3_import_level.gd -- INPUT OUTPUT.res
 
 
@@ -10,10 +10,10 @@ func _initialize() -> void:
 		return
 	var source := _globalize_if_resource_path(args[0])
 	var output := args[1]
-	var Importer = preload("res://addons/w3kit/w3_level_importer.gd")
+	var Importer = preload("res://addons/w3kit_cs/Level/W3LevelImporterBridge.cs")
 	var err: int = Importer.import_to_file(source, output)
 	if err != OK:
-		printerr("IMPORT_FAILED: ", Importer.last_error)
+		printerr("IMPORT_FAILED: ", Importer.GetLastError())
 		quit(1)
 		return
 	print("IMPORT_OK: ", output)

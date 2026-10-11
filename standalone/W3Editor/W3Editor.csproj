@@ -25,7 +25,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
+    <ProjectReference Include="..\W3Editor.Kernel\W3Editor.Kernel.csproj" />
     <ProjectReference Include="..\W3Editor.PluginContracts\W3Editor.PluginContracts.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Objects\W3Editor.Modules.Objects.csproj" />
+    <ProjectReference Include="..\W3Editor.Modules.Data\W3Editor.Modules.Data.csproj" />
   </ItemGroup>
 
 </Project>

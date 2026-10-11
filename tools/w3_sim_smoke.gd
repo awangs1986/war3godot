@@ -1,4 +1,4 @@
-extends SceneTree
+﻿extends SceneTree
 ## Headless simulation-layer smoke on the imported Lost Temple level:
 ## 1. pathing grid + budgeted pathfinding still work,
 ## 2. W3Sim moves a unit to a clicked point (CBehaviorMove port),
@@ -16,8 +16,8 @@ func _fail(msg: String) -> void:
 
 
 func _run() -> void:
-	var World = preload("res://addons/w3kit/w3_map_world.gd")
-	var W3Sim = preload("res://addons/w3kit/sim/w3_sim.gd")
+	var World = preload("res://addons/w3kit_cs/World/W3MapWorld.cs")
+	var W3Sim = preload("res://addons/w3kit_cs/Sim/W3Simulation.cs")
 	var world = World.new()
 	world.terrain_only = true
 	root.add_child(world)
@@ -35,8 +35,9 @@ func _run() -> void:
 		_fail("no pathable start/goal found")
 		return
 
-	var Pathfinding = preload("res://addons/w3kit/w3_pathfinding.gd")
-	var finder = Pathfinding.new(world.pathing)
+	var Pathfinding = preload("res://addons/w3kit_cs/Pathing/W3PathfindingBridge.cs")
+	var finder = Pathfinding.new() # C# 带参构造无法从 GDScript 调用，改 bind_grid
+	finder.bind_grid(world.pathing)
 	var t0 := Time.get_ticks_msec()
 	var waypoints: PackedVector2Array = finder.find_naive_slow_path(
 		Vector2(start.x, start.z), Vector2(goal.x, goal.z), 32.0, true)

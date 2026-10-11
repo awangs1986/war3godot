@@ -7,7 +7,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	print("VERIFY start")
-	var world_script = load("res://addons/w3kit/w3_map_world.gd")
+	var world_script = load("res://addons/w3kit_cs/World/W3MapWorld.cs")
 	if world_script == null:
 		push_error("map_world failed to load")
 		quit(1)

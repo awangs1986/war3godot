@@ -29,6 +29,7 @@ internal static class D1MapAccept
 
         var sourceSession = new MapSession();
         sourceSession.Open(source);
+        EnsurePlacementFixtures(sourceSession);
         sourceSession.DoodadsDoc.SpecialTrailer =
             BuildSpecialDoodadTrailer("ZZZZ", variation: 3, x: 2, y: 3);
         sourceSession.SaveNativeCopy(work, "d1map-accept");
@@ -169,6 +170,50 @@ internal static class D1MapAccept
         File.WriteAllText(Path.Combine(work, "d1map_accept.json"), json);
         Console.WriteLine(json);
         return pass ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The committed asset-free sample intentionally contains empty doo files.
+    /// Seed one record of each kind so this acceptance can exercise placement
+    /// ordering, extensions, removal and byte restoration without depending on
+    /// a local Lost Temple extraction.
+    /// </summary>
+    private static void EnsurePlacementFixtures(MapSession session)
+    {
+        W3EMap terrain = session.Map
+            ?? throw new InvalidOperationException("source map has no terrain");
+        float x = terrain.CenterOffsetX + 4 * W3EMap.TileSize;
+        float y = terrain.CenterOffsetY + 4 * W3EMap.TileSize;
+        float z = terrain.Corners[4 * terrain.Width + 4].WorldY();
+
+        if (session.Doodads.Count == 0)
+        {
+            session.Doodads.Add(new W3Placement
+            {
+                Id = "LTlt",
+                SkinId = "LTlt",
+                X = x,
+                Y = y,
+                Z = z,
+                IsUnit = false,
+                CreationNumber = 0,
+            });
+        }
+
+        if (session.Units.Count == 0)
+        {
+            session.Units.Add(new W3Placement
+            {
+                Id = "hfoo",
+                SkinId = "hfoo",
+                X = x + W3EMap.TileSize,
+                Y = y,
+                Z = z,
+                IsUnit = true,
+                Life = -1,
+                CreationNumber = 0,
+            });
+        }
     }
 
     private static bool RejectsPlacements(string dir, byte[] invalid)

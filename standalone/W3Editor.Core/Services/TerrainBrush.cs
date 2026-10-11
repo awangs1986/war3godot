@@ -18,6 +18,8 @@ public enum BrushOp
     Lower,
     Plateau,
     Smooth,
+    /// <summary>HiveWE exposes this deformation but its current operator is a no-op.</summary>
+    Ripple,
     CliffLower2,
     CliffLower1,
     CliffLevel,
@@ -26,6 +28,8 @@ public enum BrushOp
     WaterShallow,
     WaterDeep,
     Ramp,
+    BoundaryAdd,
+    BoundaryRemove,
     /// <summary>Internal: right-button erase for the water tools (not a palette entry).</summary>
     WaterErase,
 }
@@ -59,7 +63,7 @@ public sealed class BrushSettings
 
 /// <summary>
 /// Per-stroke state. HiveWE computes stroke targets once in apply_begin from
-/// the corner under the initial press; stamps then reuse them.
+/// the integer center of the clipped initial brush area; stamps then reuse them.
 /// </summary>
 public sealed class BrushStroke
 {
@@ -96,19 +100,18 @@ public static class TerrainBrush
     /// One HiveWE <c>TerrainBrush::apply(frame_delta)</c> at mouse corner (cx, cy).
     /// Press should pass <paramref name="frameDelta"/> = 0.5; drag passes real dt.
     /// </summary>
+    public static void Apply(W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke,
+        float frameDelta = 0.5f) => Apply(map, (float)cx, (float)cy, s, erase, stroke, frameDelta);
+
+    /// <summary>Preserves HiveWE mouse_world fractions for footprint and ramp direction.</summary>
     public static void Apply(
-        W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke,
+        W3EMap map, float cx, float cy, BrushSettings s, bool erase, BrushStroke stroke,
         float frameDelta = 0.5f)
     {
+        if (!float.IsFinite(cx) || !float.IsFinite(cy)) return;
         BrushOp op = Reverse(s.Op, erase);
         if (op == BrushOp.None)
             return;
-
-        if (!stroke.Initialized)
-        {
-            InitializeStroke(map, cx, cy, op, stroke);
-            stroke.Initialized = true;
-        }
 
         int uiSize = Math.Clamp(s.Radius, 1, 32);
         int internalSize = uiSize * SizeGranularity;
@@ -124,8 +127,14 @@ public static class TerrainBrush
 
         int adjX = Math.Min(posX, 0);
         int adjY = Math.Min(posY, 0);
-        float centerX = areaX + (areaR - areaX) * 0.5f;
-        float centerY = areaY + (areaB - areaY) * 0.5f;
+        // HiveWE stores these in int (float expression truncates toward zero).
+        int centerX = (int)(areaX + (areaR - areaX) * 0.5f);
+        int centerY = (int)(areaY + (areaB - areaY) * 0.5f);
+        if (!stroke.Initialized)
+        {
+            InitializeStroke(map, centerX, centerY, op, stroke);
+            stroke.Initialized = true;
+        }
 
         bool Inside(int i, int j)
         {
@@ -143,6 +152,7 @@ public static class TerrainBrush
             case BrushOp.Lower:
             case BrushOp.Plateau:
             case BrushOp.Smooth:
+            case BrushOp.Ripple:
                 ApplyHeight(map, areaX, areaY, areaR, areaB, Inside, centerX, centerY,
                     internalSize, op, frameDelta, stroke);
                 break;
@@ -154,6 +164,10 @@ public static class TerrainBrush
                 break;
             case BrushOp.WaterErase:
                 ApplyWaterErase(map, areaX, areaY, areaR, areaB, Inside);
+                break;
+            case BrushOp.BoundaryAdd:
+            case BrushOp.BoundaryRemove:
+                ApplyBoundary(map, areaX, areaY, areaR, areaB, Inside, op == BrushOp.BoundaryAdd);
                 break;
             default:
                 ApplyCliffs(map, areaX, areaY, areaR, areaB, Inside, posX, posY, uiSize, s, op, stroke);
@@ -187,6 +201,8 @@ public static class TerrainBrush
             BrushOp.CliffLower2 => BrushOp.CliffRaise2,
             BrushOp.WaterShallow => BrushOp.WaterErase,
             BrushOp.WaterDeep => BrushOp.WaterErase,
+            BrushOp.BoundaryAdd => BrushOp.BoundaryRemove,
+            BrushOp.BoundaryRemove => BrushOp.BoundaryAdd,
             _ => op,
         };
     }
@@ -271,7 +287,7 @@ public static class TerrainBrush
 
     private static void ApplyHeight(
         W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, float centerX, float centerY,
+        Func<int, int, bool> inside, int centerX, int centerY,
         int internalSize, BrushOp op, float frameDelta, BrushStroke stroke)
     {
         int areaW = ar - ax;
@@ -290,6 +306,11 @@ public static class TerrainBrush
                 var c = map.GetCorner(i, j)!;
                 switch (op)
                 {
+                    case BrushOp.Ripple:
+                        // HiveWE terrain_operators.cpp currently leaves the
+                        // ripple branch empty; preserve that authoritative
+                        // behavior until its operator gains semantics.
+                        break;
                     case BrushOp.Raise:
                     case BrushOp.Lower:
                     {
@@ -305,6 +326,18 @@ public static class TerrainBrush
                         break;
                 }
             }
+        }
+    }
+
+    private static void ApplyBoundary(
+        W3EMap map, int ax, int ay, int ar, int ab,
+        Func<int, int, bool> inside, bool add)
+    {
+        for (int j = ay; j < ab; j++)
+        for (int i = ax; i < ar; i++)
+        {
+            if (inside(i, j))
+                map.GetCorner(i, j)!.Boundary = add;
         }
     }
 
@@ -458,7 +491,7 @@ public static class TerrainBrush
 
     private static void ApplyRamps(
         W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, int mouseCx, int mouseCy)
+        Func<int, int, bool> inside, float mouseCx, float mouseCy)
     {
         // HiveWE: horizontal = (mouse_pos.x > i) - (mouse_pos.x < i)
         for (int j = ay; j < ab; j++)
@@ -545,23 +578,25 @@ public static class TerrainBrush
             for (int dy = 0; dy <= 2; dy++)
                 SetRamp(i + dx * horizontal, j + dy * vertical);
 
+        // HiveWE L-corner completion adds only the flag. These corners keep
+        // their own authored cliff texture (sealed ground-texture ownership).
         if (allowH || allowD)
         {
             if (Valid(i + horizontal, j + 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
                 && RampAt(i, j + 1) && RampAt(i, j + 2))
-                SetRamp(i + horizontal, j + 1);
+                map.GetCorner(i + horizontal, j + 1)!.Ramp = true;
             if (Valid(i + horizontal, j - 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
                 && RampAt(i, j - 1) && RampAt(i, j - 2))
-                SetRamp(i + horizontal, j - 1);
+                map.GetCorner(i + horizontal, j - 1)!.Ramp = true;
         }
         if (allowV || allowD)
         {
             if (Valid(i + 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
                 && RampAt(i + 1, j) && RampAt(i + 2, j))
-                SetRamp(i + 1, j + vertical);
+                map.GetCorner(i + 1, j + vertical)!.Ramp = true;
             if (Valid(i - 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
                 && RampAt(i - 1, j) && RampAt(i - 2, j))
-                SetRamp(i - 1, j + vertical);
+                map.GetCorner(i - 1, j + vertical)!.Ramp = true;
         }
     }
 }

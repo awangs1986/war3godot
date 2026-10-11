@@ -17,7 +17,7 @@ public sealed class PlacementTools(EditorSession session)
         char? cat = null;
         if (!string.IsNullOrWhiteSpace(category))
             cat = char.ToUpperInvariant(category.Trim()[0]);
-        return session.CatalogSearch(query, kind, cat, limit);
+        return session.Locked(() => session.CatalogSearch(query, kind, cat, limit));
     }
 
     [McpServerTool(Name = "list_placements"), Description("List or summarize placements on the open map.")]
@@ -25,7 +25,7 @@ public sealed class PlacementTools(EditorSession session)
         [Description("all | doodad | unit")] string kind = "all",
         [Description("Optional rawcode filter")] string? id = null,
         [Description("Max listed items (1–500)")] int limit = 50)
-        => session.ListPlacements(kind, id, limit);
+        => session.Locked(() => session.ListPlacements(kind, id, limit));
 
     [McpServerTool(Name = "place_object"), Description(
         "Place a doodad or unit at W3 world X/Y (Z snapped to terrain). Uses undo stack.")]
@@ -38,7 +38,7 @@ public sealed class PlacementTools(EditorSession session)
         [Description("Facing in degrees (default 0 doodad / 270 unit)")] float? angleDeg = null,
         [Description("Uniform scale multiplier")] float? scale = null,
         [Description("Player owner 0–15 for units")] int owner = 0)
-        => session.PlaceObject(id, x, y, isUnit, variation, angleDeg, scale, owner);
+        => session.Locked(() => session.PlaceObject(id, x, y, isUnit, variation, angleDeg, scale, owner));
 
     [McpServerTool(Name = "remove_objects"), Description(
         "Remove placements by creationNumber (requires kind=doodad|unit — the number sequences collide across files), " +
@@ -49,5 +49,5 @@ public sealed class PlacementTools(EditorSession session)
         [Description("World Y center")] float? y = null,
         [Description("Search radius in world units (default 128)")] float radius = 128f,
         [Description("doodad | unit | any (any is invalid with creationNumber)")] string kind = "any")
-        => session.RemoveObjects(creationNumber, x, y, radius, kind);
+        => session.Locked(() => session.RemoveObjects(creationNumber, x, y, radius, kind));
 }

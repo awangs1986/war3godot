@@ -31,6 +31,9 @@ public sealed class W3TerrainMap
         public byte LayerHeight;
 
         // Warsmash RenderCorner runtime state.
+        internal bool RampSuppressed;
+        /// <summary>Warsmash render-time validation; Ramp remains the saved authored flag.</summary>
+        public bool EffectiveRamp => Ramp && !RampSuppressed;
         public bool Cliff;
         public bool Romp;
         public bool HideCliff;
@@ -56,6 +59,26 @@ public sealed class W3TerrainMap
     public Corner GetCorner(int x, int y) => Corners[(y * Width) + x];
     public bool ContainsCorner(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
     public bool ContainsTile(int x, int y) => x >= 0 && y >= 0 && x < TileWidth && y < TileHeight;
+
+    /// <summary>Copies authored data only. Derived render flags belong to a build.</summary>
+    public W3TerrainMap CreateSnapshot()
+    {
+        var copy = new W3TerrainMap
+        {
+            Version = Version, Tileset = Tileset, CustomTileset = CustomTileset,
+            Width = Width, Height = Height, CenterOffsetX = CenterOffsetX, CenterOffsetY = CenterOffsetY,
+            Corners = Corners.Select(c => new Corner
+            {
+                GroundHeight = c.GroundHeight, WaterHeight = c.WaterHeight,
+                MapEdge = c.MapEdge, Ramp = c.Ramp, Blight = c.Blight, Water = c.Water, Boundary = c.Boundary,
+                GroundTexture = c.GroundTexture, GroundVariation = c.GroundVariation,
+                CliffTexture = c.CliffTexture, CliffVariation = c.CliffVariation, LayerHeight = c.LayerHeight,
+            }).ToArray(),
+        };
+        copy.GroundTilesets.AddRange(GroundTilesets);
+        copy.CliffTilesets.AddRange(CliffTilesets);
+        return copy;
+    }
 
     public static W3TerrainMap LoadFile(string path) => Parse(File.ReadAllBytes(path));
 
@@ -188,6 +211,7 @@ public sealed class W3TerrainMap
     {
         foreach (Corner corner in Corners)
         {
+            corner.RampSuppressed = false;
             corner.Cliff = false;
             corner.Romp = false;
             corner.HideCliff = false;
@@ -213,7 +237,7 @@ public sealed class W3TerrainMap
         Corner br = GetCorner(x + 1, y);
         Corner tl = GetCorner(x, y + 1);
         Corner tr = GetCorner(x + 1, y + 1);
-        return bl.Ramp && br.Ramp && tl.Ramp && tr.Ramp &&
+        return bl.EffectiveRamp && br.EffectiveRamp && tl.EffectiveRamp && tr.EffectiveRamp &&
             !(bl.LayerHeight == tr.LayerHeight && tl.LayerHeight == br.LayerHeight);
     }
 

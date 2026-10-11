@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://binteract001"]
 
-[ext_resource type="Script" path="res://scripts/interactable.gd" id="1_act"]
+[ext_resource type="Script" path="res://runtime/World/Interactable.cs" id="1_act"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_1"]
 size = Vector3(2, 2, 2)

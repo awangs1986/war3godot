@@ -19,8 +19,12 @@ using W3Editor.Mcp.Tools;
 //   --plugin-host-selftest [outDir]         DLL plugin host load (TDD gate)
 //   --fbx-import-accept [outDir]            FBX scale + dual ownership write
 //   --make-fbx-sample [outDir]              generate compliant FBX + 512 PBR textures
+//   --module-host-accept [map] [outDir]     contracts v2 + kernel: parts, atomic
+//                                           generation, undo, removal drills
+//   --worlddata-edit-accept [map] [outDir]  GUI core pathing/regions edit gate
+//   --tierb-real-map-accept <map> [outDir]  A3 real structured-map byte gate
 if (args.Length >= 1 && args[0] is "--selftest" or "--analyze" or "--rebuild-lt" or "--export-lt-ref" or "--materialize-ref" or "--panel-build-lt-ref" or "--human-probe"
-    or "--seal-brush-dump" or "--seal-dump-w3e" or "--seal-brush-diff" or "--seal-ground-tex" or "--probe-atlas-alpha" or "--repro-raise2" or "--probe-tile-composite" or "--probe-flatten-smooth" or "--m2-accept" or "--native-roundtrip" or "--catalog-selftest" or "--d1map-accept" or "--plugin-host-selftest" or "--fbx-import-accept" or "--make-fbx-sample")
+    or "--seal-brush-dump" or "--seal-dump-w3e" or "--seal-brush-diff" or "--seal-ground-tex" or "--probe-atlas-alpha" or "--repro-raise2" or "--probe-tile-composite" or "--probe-flatten-smooth" or "--m2-accept" or "--native-roundtrip" or "--catalog-selftest" or "--d1map-accept" or "--plugin-host-selftest" or "--fbx-import-accept" or "--make-fbx-sample" or "--module-host-accept" or "--worlddata-edit-accept" or "--tierb-real-map-accept" or "--object-data-accept" or "--editor-data-accept" or "--trigger-ir-accept" or "--model-diagnostics-accept" or "--terrain-interaction-accept")
 {
     try
     {
@@ -155,6 +159,30 @@ internal static class CliMain
 
             case "--make-fbx-sample":
                 return MakeFbxSample.Run(args);
+
+            case "--module-host-accept":
+                return ModuleHostAccept.Run(args);
+
+            case "--worlddata-edit-accept":
+                return WorldDataEditAccept.Run(args);
+
+            case "--tierb-real-map-accept":
+                return TierBRealMapAccept.Run(args);
+
+            case "--object-data-accept":
+                return ObjectDataAccept.Run(args);
+
+            case "--editor-data-accept":
+                return EditorDataAccept.Run(args);
+
+            case "--trigger-ir-accept":
+                return TriggerIrAccept.Run(args);
+
+            case "--model-diagnostics-accept":
+                return ModelDiagnosticsAccept.Run(args);
+
+            case "--terrain-interaction-accept":
+                return TerrainInteractionAccept.Run(args);
 
             default:
                 Console.Error.WriteLine("Unknown CLI mode");

@@ -1,7 +1,7 @@
 extends SceneTree
 
-const W3GpuTerrain = preload("res://addons/w3kit/w3_gpu_terrain.gd")
-const W3TextureProvider = preload("res://addons/w3kit/w3_texture_provider.gd")
+const W3GpuTerrain = preload("res://addons/w3kit_cs/Terrain/WarsmashGroundRenderer.cs")
+const W3TextureProvider = preload("res://addons/w3kit_cs/Assets/W3TextureProvider.cs")
 
 
 func _initialize() -> void:
@@ -11,7 +11,7 @@ func _initialize() -> void:
 func _run() -> void:
 	var level = ResourceLoader.load("res://war3/maps/LostTemple/lost_temple.res", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var provider = W3TextureProvider.new()
-	provider.load_terrain_slk()
+	provider.load_terrain_slk("")
 	var terrain = W3GpuTerrain.new()
 	terrain.map = level
 	terrain.textures = provider

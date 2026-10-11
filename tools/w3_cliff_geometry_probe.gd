@@ -1,9 +1,9 @@
-extends SceneTree
+﻿extends SceneTree
 ## Compares a generated cliff model's footprint/edge heights with terrain.
 
-const W3EMap = preload("res://addons/w3kit/w3e_map.gd")
-const W3MdxModel = preload("res://addons/w3kit/w3_mdx_model.gd")
-const W3Paths = preload("res://addons/w3kit/w3_paths.gd")
+const W3EMap = preload("res://addons/w3kit_cs/Formats/W3EMapBridge.cs")
+const W3MdxModel = preload("res://addons/w3kit_cs/Mdx/W3MdxModel.cs")
+const W3Paths = preload("res://addons/w3kit_cs/Paths/W3PathResolverBridge.cs")
 
 
 func _initialize() -> void:
@@ -45,7 +45,7 @@ func _run() -> void:
 	var placement: Vector2i = transition.get("placement", source)
 	var tag := str(transition.get("tag", ""))
 	var rel := "Doodads/Terrain/CliffTrans/CliffTrans%s0.mdx" % tag
-	var model = W3MdxModel.load_file(W3Paths.resolve_path(rel))
+	var model = W3MdxModel.load_file(W3Paths.new().resolve_path(rel))
 	if model == null or model.geosets.is_empty():
 		printerr("CLIFF_GEOMETRY_FAILED model=%s" % rel)
 		quit(1)

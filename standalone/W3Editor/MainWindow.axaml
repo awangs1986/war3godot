@@ -20,9 +20,9 @@
                        HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
           <Menu VerticalAlignment="Center" Background="Transparent">
-            <MenuItem Header="文件(_F)">
-              <MenuItem Header="新建地图…" Click="OnNewMap" InputGesture="Ctrl+N" />
-              <MenuItem Header="打开地图…" Click="OnOpenMap" InputGesture="Ctrl+O" />
+            <MenuItem x:Name="MenuFile" Header="文件(_F)">
+              <MenuItem x:Name="MenuNewMap" Header="新建地图…" Click="OnNewMap" InputGesture="Ctrl+N" />
+              <MenuItem x:Name="MenuOpenMap" Header="打开地图…" Click="OnOpenMap" InputGesture="Ctrl+O" />
               <Separator />
               <MenuItem x:Name="MenuSave" Header="保存地图" Click="OnSave" IsEnabled="False" InputGesture="Ctrl+S" />
               <MenuItem x:Name="MenuExport" Header="另存为 d1map…" Click="OnSaveAsNative" IsEnabled="False" />
@@ -31,14 +31,14 @@
               <Separator />
               <MenuItem Header="退出" Click="OnExit" />
             </MenuItem>
-            <MenuItem Header="编辑(_E)">
+            <MenuItem x:Name="MenuEdit" Header="编辑(_E)">
               <MenuItem x:Name="MenuUndo" Header="撤销" Click="OnUndo" IsEnabled="False" InputGesture="Ctrl+Z" />
               <MenuItem x:Name="MenuRedo" Header="重做" Click="OnRedo" IsEnabled="False" InputGesture="Ctrl+Y" />
               <Separator />
-              <MenuItem Header="更换图块集…" Click="OnTileSetter" />
-              <MenuItem Header="全局图块寻路…" Click="OnTilePathing" />
+              <MenuItem x:Name="MenuTileSetter" Header="更换图块集…" Click="OnTileSetter" />
+              <MenuItem x:Name="MenuTilePathing" Header="全局图块寻路…" Click="OnTilePathing" />
             </MenuItem>
-            <MenuItem Header="视图(_V)">
+            <MenuItem x:Name="MenuView" Header="视图(_V)">
               <MenuItem x:Name="MenuOverlayPathing" Header="寻路覆盖层" ToggleType="CheckBox" Click="OnOverlayToggled" IsEnabled="False" />
               <MenuItem x:Name="MenuOverlayDoodads" Header="装饰物显示" ToggleType="CheckBox" Click="OnOverlayToggled" IsEnabled="False" />
               <MenuItem x:Name="MenuOverlayUnits" Header="单位显示" ToggleType="CheckBox" Click="OnOverlayToggled" IsEnabled="False" />
@@ -49,8 +49,8 @@
               <MenuItem Header="地形编辑" Tag="Terrain" Click="OnModeMenuClicked" />
               <MenuItem Header="装饰物" Tag="Doodads" Click="OnModeMenuClicked" />
               <MenuItem Header="单位" Tag="Units" Click="OnModeMenuClicked" />
-              <MenuItem Header="寻路" IsEnabled="False" ToolTip.Tip="占位 · P7（寻路与碰撞验证）" />
-              <MenuItem Header="区域" IsEnabled="False" ToolTip.Tip="占位 · P5（交互数据层）" />
+              <MenuItem Header="寻路" Tag="Pathing" Click="OnModeMenuClicked" />
+              <MenuItem Header="区域" Tag="Regions" Click="OnModeMenuClicked" />
               <Separator />
               <MenuItem x:Name="MenuPlugins" Header="插件" />
             </MenuItem>
@@ -67,7 +67,7 @@
             BorderBrush="{StaticResource StrokeSoft}" BorderThickness="0,0,0,1" Padding="8,6">
       <DockPanel LastChildFill="False">
         <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Spacing="2">
-          <Button Classes="tool" Click="OnOpenMap">
+          <Button x:Name="BtnOpen" Classes="tool" Click="OnOpenMap">
             <StackPanel Orientation="Horizontal" Spacing="7">
               <TextBlock Classes="icon" Text="&#xE838;" Foreground="{StaticResource Gold}" />
               <TextBlock Text="打开" />
@@ -119,8 +119,8 @@
               <ToggleButton x:Name="BtnModeTerrain" Classes="tool" Content="地形" IsChecked="True" Tag="Terrain" Click="OnModeClicked" ToolTip.Tip="地形笔刷（右侧“地形”页）" />
               <ToggleButton x:Name="BtnModeDoodads" Classes="tool" Content="装饰物" Tag="Doodads" Click="OnModeClicked" ToolTip.Tip="装饰物/可破坏物摆放（3D 视口）" />
               <ToggleButton x:Name="BtnModeUnits" Classes="tool" Content="单位" Tag="Units" Click="OnModeClicked" ToolTip.Tip="单位摆放（3D 视口）" />
-              <ToggleButton Classes="tool" Content="寻路" IsEnabled="False" ToolTip.Tip="占位 · P7（寻路与碰撞验证）" />
-              <ToggleButton Classes="tool" Content="区域" IsEnabled="False" ToolTip.Tip="占位 · P5（交互数据层）" />
+              <ToggleButton x:Name="BtnModePathing" Classes="tool" Content="寻路" Tag="Pathing" Click="OnModeClicked" ToolTip.Tip="在 2D/3D 地面直接绘制寻路标志；右键清除" />
+              <ToggleButton x:Name="BtnModeRegions" Classes="tool" Content="区域" Tag="Regions" Click="OnModeClicked" ToolTip.Tip="在 2D/3D 地面拖出矩形区域" />
             </StackPanel>
           </Border>
         </StackPanel>
@@ -161,56 +161,7 @@
 
       <!-- 左侧栏 -->
       <Border x:Name="LeftSidebar" Grid.Column="0" Classes="card">
-        <ScrollViewer>
-          <StackPanel Margin="14,12" Spacing="10">
-            <DockPanel>
-              <Button DockPanel.Dock="Right" Classes="tool" Width="28" Height="28" Padding="0"
-                      Click="OnHideLeftSidebar" ToolTip.Tip="隐藏左侧面板">
-                <TextBlock Classes="icon" Text="&#xE711;" FontSize="12" HorizontalAlignment="Center" />
-              </Button>
-              <TextBlock Classes="sectionTitle" Text="小地图" VerticalAlignment="Center" />
-            </DockPanel>
-            <Border Background="{StaticResource ViewportBg}" CornerRadius="8"
-                    BorderBrush="{StaticResource Stroke}" BorderThickness="1" Height="222">
-              <Panel>
-                <Image x:Name="MinimapImage" Stretch="Uniform" Margin="8" />
-                <TextBlock x:Name="MinimapHint" Text="未打开地图" Foreground="#6B6455"
-                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                <Border Width="14" Height="14" Margin="5" BorderBrush="{StaticResource Gold}"
-                        BorderThickness="2,2,0,0" HorizontalAlignment="Left" VerticalAlignment="Top" />
-                <Border Width="14" Height="14" Margin="5" BorderBrush="{StaticResource Gold}"
-                        BorderThickness="0,2,2,0" HorizontalAlignment="Right" VerticalAlignment="Top" />
-                <Border Width="14" Height="14" Margin="5" BorderBrush="{StaticResource Gold}"
-                        BorderThickness="2,0,0,2" HorizontalAlignment="Left" VerticalAlignment="Bottom" />
-                <Border Width="14" Height="14" Margin="5" BorderBrush="{StaticResource Gold}"
-                        BorderThickness="0,0,2,2" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-              </Panel>
-            </Border>
-
-            <TextBlock Classes="sectionTitle" Text="地图信息" Margin="0,6,0,0" />
-            <Border Background="{StaticResource BgElevated}" CornerRadius="8" Padding="10,8">
-              <StackPanel Spacing="7">
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="来源" /><TextBlock x:Name="InfoSource" Classes="fieldValue" Text="-" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding #InfoSource.Text}" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="w3e 版本" /><TextBlock x:Name="InfoVersion" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="地图版本" /><TextBlock x:Name="InfoW3i" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="图块集" /><TextBlock x:Name="InfoTileset" Classes="fieldValue" Text="-" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="尺寸(格)" /><TextBlock x:Name="InfoSize" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="中心偏移" /><TextBlock x:Name="InfoOffset" Classes="fieldValue" Text="-" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="地面纹理" /><TextBlock x:Name="InfoGroundTex" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="悬崖纹理" /><TextBlock x:Name="InfoCliffTex" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-                <DockPanel><TextBlock Classes="fieldLabel" Width="78" Text="寻路网格" /><TextBlock x:Name="InfoPathing" Classes="fieldValue" Text="-" TextWrapping="Wrap" /></DockPanel>
-              </StackPanel>
-            </Border>
-
-            <TextBlock Classes="sectionTitle" Text="图层" Margin="0,6,0,0" />
-            <ListBox x:Name="LayerList" IsHitTestVisible="False">
-              <ListBoxItem Content="地形" />
-              <ListBoxItem Content="装饰物" />
-              <ListBoxItem Content="单位" />
-              <ListBoxItem Content="寻路" />
-            </ListBox>
-          </StackPanel>
-        </ScrollViewer>
+        <ContentControl x:Name="LeftPanelHost" />
       </Border>
 
       <!-- 中央视口 -->
@@ -241,7 +192,7 @@
       </Border>
 
       <!-- 右侧工具面板 -->
-      <Border Grid.Column="4" Classes="card">
+      <Border x:Name="RightSidebar" Grid.Column="4" Classes="card">
         <TabControl x:Name="ToolTabs" Padding="6,0" Margin="4,4,4,0" SelectionChanged="OnToolTabChanged">
           <TabControl.Styles>
             <Style Selector="TabItem">
@@ -250,124 +201,6 @@
               <Setter Property="Padding" Value="10,0" />
             </Style>
           </TabControl.Styles>
-          <TabItem Header="地形">
-            <ScrollViewer>
-              <StackPanel Margin="10" Spacing="10">
-                <TextBlock Classes="sectionTitle" Text="高度（左键绘制 · 右键反向）" />
-                <UniformGrid Columns="2" x:Name="HeightOpGrid">
-                  <ToggleButton x:Name="BtnRaise" Content="抬升" Tag="Raise" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnLower" Content="降低" Tag="Lower" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnPlateau" Content="整平" Tag="Plateau" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" ToolTip.Tip="把范围内地面/水面高度拉平到起笔点" />
-                  <ToggleButton x:Name="BtnSmooth" Content="平滑" Tag="Smooth" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" />
-                </UniformGrid>
-
-                <TextBlock Classes="sectionTitle" Text="悬崖（层级 · 以起笔点为基准）" Margin="0,4,0,0" />
-                <UniformGrid Columns="2" x:Name="CliffOpGrid">
-                  <ToggleButton x:Name="BtnCliffLower2" Content="降低两层" Tag="CliffLower2" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnCliffLower1" Content="降低一层" Tag="CliffLower1" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnCliffRaise1" Content="升高一层" Tag="CliffRaise1" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnCliffRaise2" Content="升高两层" Tag="CliffRaise2" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnCliffLevel" Content="同层整平" Tag="CliffLevel" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" ToolTip.Tip="把范围内悬崖层拉平到起笔点所在层" />
-                  <ToggleButton x:Name="BtnRamp" Content="坡道" Tag="Ramp" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" ToolTip.Tip="在相差一层的悬崖边沿刷出坡道（右键清除坡道标记）" />
-                </UniformGrid>
-
-                <TextBlock Classes="sectionTitle" Text="水（右键移除水）" Margin="0,4,0,0" />
-                <UniformGrid Columns="2" x:Name="WaterOpGrid">
-                  <ToggleButton x:Name="BtnWaterShallow" Content="浅水" Tag="WaterShallow" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,5,5" HorizontalAlignment="Stretch" />
-                  <ToggleButton x:Name="BtnWaterDeep" Content="深水" Tag="WaterDeep" Click="OnBrushOpClicked" IsEnabled="False" Margin="0,0,0,5" HorizontalAlignment="Stretch" />
-                </UniformGrid>
-                <DockPanel>
-                  <TextBlock x:Name="LblSize" DockPanel.Dock="Right" Classes="fieldValue" Text="4" />
-                  <TextBlock Classes="fieldLabel" Text="笔刷大小（角点）" />
-                </DockPanel>
-                <Slider x:Name="SliderSize" Minimum="1" Maximum="16" Value="4" IsEnabled="False" />
-                <DockPanel>
-                  <TextBlock x:Name="LblStrength" DockPanel.Dock="Right" Classes="fieldValue" Text="60%" />
-                  <TextBlock Classes="fieldLabel" Text="笔刷强度（仅 MCP；交互抬升用帧时间）" />
-                </DockPanel>
-                <Slider x:Name="SliderStrength" Minimum="0" Maximum="100" Value="60" IsEnabled="False" />
-
-                <TextBlock Classes="sectionTitle" Text="地面纹理（点击选择后刷绘）" Margin="0,6,0,0" />
-                <ItemsControl x:Name="TexturePalette">
-                  <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                      <WrapPanel />
-                    </ItemsPanelTemplate>
-                  </ItemsControl.ItemsPanel>
-                </ItemsControl>
-                <TextBlock x:Name="TexturePaletteHint" Classes="fieldLabel" Text="打开地图后显示该图块集的纹理" />
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                  <Button Content="更换图块集…" Click="OnTileSetter" />
-                  <Button Content="图块寻路…" Click="OnTilePathing" />
-                </StackPanel>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>
-          <TabItem Header="装饰物">
-            <DockPanel Margin="10">
-              <TextBlock DockPanel.Dock="Top" Classes="sectionTitle" Text="装饰物调色板（点击选中 → 3D 视口左键放置）" />
-              <ComboBox x:Name="DoodadCategory" DockPanel.Dock="Top" Margin="0,8,0,0" HorizontalAlignment="Stretch" />
-              <TextBox x:Name="DoodadSearch" DockPanel.Dock="Top" Watermark="按名称 / ID 过滤…" Margin="0,8,0,8" />
-              <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                  <CheckBox x:Name="ChkRandVariation" Content="随机变体" IsChecked="True" FontSize="12" />
-                  <CheckBox x:Name="ChkRandRotation" Content="随机旋转" IsChecked="True" FontSize="12" />
-                  <CheckBox x:Name="ChkRandScale" Content="随机缩放" IsChecked="True" FontSize="12" />
-                </StackPanel>
-                <DockPanel>
-                  <TextBlock Classes="fieldLabel" Text="散布间距" VerticalAlignment="Center" />
-                  <TextBlock x:Name="LblScatterSpacing" Classes="fieldLabel" Text="1.0 格"
-                             DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
-                  <Slider x:Name="SliderScatterSpacing" Minimum="0.5" Maximum="4" Value="1"
-                          TickFrequency="0.5" IsSnapToTickEnabled="True" Margin="8,0,0,0" />
-                </DockPanel>
-                <DockPanel>
-                  <TextBlock Classes="fieldLabel" Text="散布半径" VerticalAlignment="Center" />
-                  <TextBlock x:Name="LblScatterRadius" Classes="fieldLabel" Text="3 格"
-                             DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0" />
-                  <Slider x:Name="SliderScatterRadius" Minimum="0" Maximum="8" Value="3"
-                          TickFrequency="1" IsSnapToTickEnabled="True" Margin="8,0,0,0" />
-                </DockPanel>
-                <TextBlock x:Name="DoodadHint" Classes="fieldLabel" TextWrapping="Wrap"
-                           Text="打开地图后可用。左键放置 · 拖动散布 · 空格/Esc 取消。" />
-              </StackPanel>
-              <ListBox x:Name="DoodadList" />
-            </DockPanel>
-          </TabItem>
-          <TabItem Header="单位">
-            <DockPanel Margin="10">
-              <TextBlock DockPanel.Dock="Top" Classes="sectionTitle" Text="单位调色板（点击选中 → 3D 视口左键放置）" />
-              <ComboBox x:Name="UnitOwner" DockPanel.Dock="Top" Margin="0,8,0,0" HorizontalAlignment="Stretch" />
-              <ComboBox x:Name="UnitRace" DockPanel.Dock="Top" Margin="0,8,0,0" HorizontalAlignment="Stretch" />
-              <TextBox x:Name="UnitSearch" DockPanel.Dock="Top" Watermark="按名称 / ID 过滤…" Margin="0,8,0,8" />
-              <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,8,0,0">
-                <CheckBox x:Name="ChkUnitRandRotation" Content="随机朝向（默认 WE 270°）" FontSize="12" />
-                <TextBlock x:Name="UnitHint" Classes="fieldLabel"
-                           Text="打开地图后可用。左键放置 · 空格/Esc 取消。" TextWrapping="Wrap" />
-              </StackPanel>
-              <ListBox x:Name="UnitList" />
-            </DockPanel>
-          </TabItem>
-          <TabItem Header="寻路">
-            <StackPanel Margin="10" Spacing="10">
-              <TextBlock Classes="sectionTitle" Text="寻路覆盖层（war3map.wpm）" />
-              <TextBlock Classes="fieldLabel" TextWrapping="Wrap"
-                         Text="在视口叠加静态寻路网格（32 单位/格）。先在“视图”菜单打开“寻路覆盖层”。" />
-              <CheckBox x:Name="ChkNoWalk" Content="禁行走（红）" IsChecked="True" IsEnabled="False" Click="OnOverlayToggled" />
-              <CheckBox x:Name="ChkNoFly" Content="禁飞行（蓝）" IsEnabled="False" Click="OnOverlayToggled" />
-              <CheckBox x:Name="ChkNoBuild" Content="禁建造（金）" IsEnabled="False" Click="OnOverlayToggled" />
-              <TextBlock x:Name="PathingHint" Classes="fieldLabel" Text="未加载 wpm。" TextWrapping="Wrap" />
-              <TextBlock Classes="fieldLabel" Text="寻路笔刷编辑为 P7（寻路与碰撞验证）。" />
-            </StackPanel>
-          </TabItem>
-          <TabItem Header="区域">
-            <StackPanel Margin="10" Spacing="10">
-              <TextBlock Classes="sectionTitle" Text="区域 · 占位 P5（交互数据层）" />
-              <TextBlock Classes="fieldLabel" TextWrapping="Wrap"
-                         Text="矩形区域框选与命名，供关卡逻辑（出生点 / 传送 / 事件触发范围）引用。" />
-              <Button Content="新建区域" IsEnabled="False" />
-            </StackPanel>
-          </TabItem>
         </TabControl>
       </Border>
     </Grid>

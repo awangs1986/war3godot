@@ -21,6 +21,28 @@ public sealed class EditorSession
         Catalog = new ObjectCatalog(Assets);
     }
 
+    /// <summary>
+    /// MCP hosts may issue overlapping tool calls, but MapSession / EditHistory /
+    /// TerrainBrush are single-threaded by contract (the UI process enforces this
+    /// via the dispatcher; here the gate does). Every tool entry point that
+    /// touches session state must run under Locked/LockedAsync.
+    /// </summary>
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    public T Locked<T>(Func<T> action)
+    {
+        _gate.Wait();
+        try { return action(); }
+        finally { _gate.Release(); }
+    }
+
+    public async Task<T> LockedAsync<T>(Func<Task<T>> action, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct);
+        try { return await action(); }
+        finally { _gate.Release(); }
+    }
+
     public void RequireOpen()
     {
         if (!Map.IsOpen || Map.Map == null)
