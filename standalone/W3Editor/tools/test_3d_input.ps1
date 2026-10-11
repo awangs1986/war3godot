@@ -1,5 +1,10 @@
 # End-to-end 3D viewport input test: drives REAL mouse events through Win32
 # and verifies the editor camera reacts (rotate / pan / zoom).
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$MapPath,
+    [string]$EditorPath
+)
 $ErrorActionPreference = "Stop"
 
 Add-Type @"
@@ -15,11 +20,12 @@ public static class M {
 }
 "@
 
-$exe = "C:\projects\war3godot\standalone\W3Editor\bin\Release\net8.0\W3Editor.exe"
-$camLog = "C:\projects\war3godot\standalone\W3Editor\selftest_caminput.txt"
+$editorRoot = Split-Path $PSScriptRoot -Parent
+$exe = if ($EditorPath) { $EditorPath } else { Join-Path $editorRoot "bin/Release/net8.0/W3Editor.exe" }
+$camLog = Join-Path $editorRoot "selftest_caminput.txt"
 Remove-Item $camLog -ErrorAction SilentlyContinue
 
-$proc = Start-Process -FilePath $exe -ArgumentList '--open','"D:\maps\WC2Orc14.w3x"','--view3d','--camlog',"`"$camLog`"" -PassThru
+$proc = Start-Process -FilePath $exe -ArgumentList '--open',"`"$MapPath`"",'--view3d','--camlog',"`"$camLog`"" -PassThru
 try {
     # Wait for the map + GL viewport (camlog appears once the timer runs).
     $deadline = (Get-Date).AddSeconds(30)
