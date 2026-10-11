@@ -1,0 +1,29 @@
+extends Node
+## Autoload that preloads w3kit scripts so class_name types resolve in headless/-s runs.
+
+
+func _enter_tree() -> void:
+	# Load in dependency order so class_name registers.
+	preload("res://addons/w3kit/w3_binary_reader.gd")
+	preload("res://addons/w3kit/w3_paths.gd")
+	preload("res://addons/w3kit/w3_corner.gd")
+	preload("res://addons/w3kit/w3e_map.gd")
+	preload("res://addons/w3kit/w3_height_sampler.gd")
+	preload("res://addons/w3kit/w3_grid_pathfinder.gd")
+	preload("res://addons/w3kit/w3_blp_decoder.gd")
+	preload("res://addons/w3kit/w3_texture_provider.gd")
+	preload("res://addons/w3kit/w3_gpu_terrain.gd")
+	preload("res://addons/w3kit/w3_shd.gd")
+	preload("res://addons/w3kit/w3_terrain_builder.gd")
+	preload("res://addons/w3kit/w3_cliff_builder.gd")
+	preload("res://addons/w3kit/w3_gpu_water.gd")
+	preload("res://addons/w3kit/w3_water_builder.gd")
+	preload("res://addons/w3kit/w3_war3_lit.gd")
+	preload("res://addons/w3kit/w3_lit_settings.gd")
+	preload("res://addons/w3kit/w3_map_archive.gd")
+	preload("res://addons/w3kit/w3_doo_parser.gd")
+	preload("res://addons/w3kit/w3_mdx_model.gd")
+	preload("res://addons/w3kit/w3_mdx_instance.gd")
+	preload("res://addons/w3kit/w3_mdx_batcher.gd")
+	preload("res://addons/w3kit/w3_object_catalog.gd")
+	preload("res://addons/w3kit/w3_map_world.gd")

@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3 uid="uid://bisocamera001"]
+
+[ext_resource type="Script" path="res://scripts/camera_iso.gd" id="1_cam"]
+
+[node name="IsoCamera" type="Node3D"]
+script = ExtResource("1_cam")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(0.707107, -0.408248, 0.57735, 0, 0.816497, 0.57735, -0.707107, -0.408248, 0.57735, 14, 14, 14)
+projection = 1
+size = 18.0
+near = 0.05
+far = 200.0
+current = true

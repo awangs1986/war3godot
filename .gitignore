@@ -1,0 +1,34 @@
+.godot/
+*.translation
+export_presets.cfg
+.import/
+*.tmp
+*~
+# Local War3 dumps / extracted maps (never commit Blizzard IP)
+tools/refs/
+user_w3_assets/
+war3/game/
+war3/maps/
+tools/mpqtool/node_modules/
+*.w3x
+*.w3m
+*.mpq
+*.blp
+*.mdx
+*.mdl
+# Keep procedural testdata w3e (generated, non-Blizzard)
+!testdata/hivewe_sample/war3map.w3e
+!testdata/hivewe_sample/war3map.doo
+!testdata/hivewe_sample/war3mapUnits.doo
+war3/local_paths.json
+!war3/README.md
+
+# Local tool dumps / Wine prefixes (never commit)
+tools/HiveWE/
+tools/wineprefixes/
+**/node_modules/
+tools/HiveWE/
+tools/wineprefixes/
+**/node_modules/
+**/__pycache__/
+*.pyc

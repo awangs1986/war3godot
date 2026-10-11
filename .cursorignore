@@ -1,0 +1,38 @@
+# Cursor file index was spawning many `rg --files --follow` workers that
+# followed Wine prefix symlinks and ate all RAM/CPU. Keep indexing on code only.
+
+# Godot
+.godot/
+.import/
+*.translation
+
+# Huge / binary / third-party — do not index
+tools/wineprefixes/
+tools/refs/
+tools/HiveWE/
+tools/mpqtool/node_modules/
+war3/game/
+war3/maps/
+extracted_w3_assets/
+
+# Game binaries / assets
+*.w3x
+*.w3m
+*.mpq
+*.blp
+*.mdx
+*.mdl
+*.dds
+*.tga
+*.png
+*.jpg
+*.wav
+*.mp3
+*.ogg
+
+# External mounts / Windows trees (never follow)
+/run/media/
+**/drive_c/
+**/windows/
+**/Program Files*/
+**/Program Files (x86)/

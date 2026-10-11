@@ -1,0 +1,212 @@
+[gd_scene load_steps=11 format=3 uid="uid://bdungeon001"]
+
+[ext_resource type="Script" path="res://scripts/level_root.gd" id="1_level"]
+[ext_resource type="PackedScene" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="PackedScene" path="res://scenes/iso_camera.tscn" id="3_cam"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4_hud"]
+[ext_resource type="PackedScene" path="res://scenes/interactable.tscn" id="5_act"]
+[ext_resource type="PackedScene" path="res://scenes/enemy.tscn" id="6_enemy"]
+[ext_resource type="PackedScene" path="res://scenes/obstacle.tscn" id="7_obs"]
+[ext_resource type="Script" path="res://scripts/navigation_setup.gd" id="8_nav"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_floor"]
+size = Vector3(36, 1, 36)
+
+[sub_resource type="BoxMesh" id="BoxMesh_floor"]
+size = Vector3(36, 1, 36)
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.55, 0.5, 0.45, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_wall"]
+albedo_color = Color(0.4, 0.38, 0.48, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_wall"]
+size = Vector3(36, 3, 1)
+
+[sub_resource type="BoxMesh" id="BoxMesh_wall"]
+size = Vector3(36, 3, 1)
+
+[sub_resource type="StandardMaterial3D" id="Mat_portal"]
+albedo_color = Color(0.2, 0.45, 0.55, 1)
+emission_enabled = true
+emission = Color(0.15, 0.4, 0.55, 1)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_long"]
+size = Vector3(8, 2.5, 1.5)
+
+[sub_resource type="BoxMesh" id="BoxMesh_long"]
+size = Vector3(8, 2.5, 1.5)
+
+[sub_resource type="StandardMaterial3D" id="Mat_pillar"]
+albedo_color = Color(0.4, 0.36, 0.3, 1)
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.25, 0.22, 0.3, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.85, 0.85, 0.9, 1)
+ambient_light_energy = 1.2
+fog_enabled = false
+
+[node name="Dungeon" type="Node3D"]
+script = ExtResource("1_level")
+is_dungeon = true
+dungeon_depth = 1
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.75, -0.45, 0.48, 0, 0.73, 0.68, -0.66, -0.51, 0.55, 0, 10, 0)
+light_color = Color(0.85, 0.75, 0.7, 1)
+light_energy = 0.85
+shadow_enabled = true
+
+[node name="NavigationRegion3D" type="NavigationRegion3D" parent="."]
+script = ExtResource("8_nav")
+geometry_root_path = NodePath("../Geometry")
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Floor" type="StaticBody3D" parent="Geometry"]
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+shape = SubResource("BoxShape3D_floor")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/Floor"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+mesh = SubResource("BoxMesh_floor")
+surface_material_override/0 = SubResource("Mat_floor")
+
+[node name="WallN" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, -18)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/WallN"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallN"]
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WallS" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 18)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/WallS"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallS"]
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WallE" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 18, 1.5, 0)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/WallE"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallE"]
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="WallW" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -18, 1.5, 0)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/WallW"]
+shape = SubResource("BoxShape3D_wall")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/WallW"]
+mesh = SubResource("BoxMesh_wall")
+surface_material_override/0 = SubResource("Mat_wall")
+
+[node name="PillarA" parent="Geometry" instance=ExtResource("7_obs")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -6, 0, 2)
+
+[node name="PillarB" parent="Geometry" instance=ExtResource("7_obs")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 0, -2)
+
+[node name="PillarC" parent="Geometry" instance=ExtResource("7_obs")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, 6)
+
+[node name="PillarD" parent="Geometry" instance=ExtResource("7_obs")]
+transform = Transform3D(1.4, 0, 0, 0, 1, 0, 0, 0, 1.4, -3, 0, -7)
+
+[node name="BarrierMid" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -1)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/BarrierMid"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+shape = SubResource("BoxShape3D_long")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/BarrierMid"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+mesh = SubResource("BoxMesh_long")
+surface_material_override/0 = SubResource("Mat_pillar")
+
+[node name="BarrierL" type="StaticBody3D" parent="Geometry"]
+transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, -10, 0, 4)
+collision_layer = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Geometry/BarrierL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+shape = SubResource("BoxShape3D_long")
+
+[node name="Mesh" type="MeshInstance3D" parent="Geometry/BarrierL"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.25, 0)
+mesh = SubResource("BoxMesh_long")
+surface_material_override/0 = SubResource("Mat_pillar")
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.2, 12)
+
+[node name="IsoCamera" parent="." instance=ExtResource("3_cam")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 12)
+
+[node name="HUD" parent="." instance=ExtResource("4_hud")]
+
+[node name="TownPortal" parent="." instance=ExtResource("5_act")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 14)
+kind = "portal_town"
+prompt = "Return to Town (click / E)"
+
+[node name="Mesh" parent="TownPortal"]
+surface_material_override/0 = SubResource("Mat_portal")
+
+[node name="Enemy1" parent="." instance=ExtResource("6_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -8, 0.05, -4)
+max_hp = 28
+damage = 5
+
+[node name="Enemy2" parent="." instance=ExtResource("6_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 8, 0.05, -5)
+max_hp = 32
+damage = 6
+
+[node name="Enemy3" parent="." instance=ExtResource("6_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.05, -10)
+max_hp = 40
+damage = 7
+
+[node name="Enemy4" parent="." instance=ExtResource("6_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 9, 0.05, -2)
+max_hp = 26
+damage = 5
+
+[node name="Enemy5" parent="." instance=ExtResource("6_enemy")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 0.05, -8)
+max_hp = 30
+damage = 6
+
+[node name="Label3D" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 4, 10)
+pixel_size = 0.018
+text = "Cathedral L1 — pillars & walls block path"
+font_size = 48
+outline_size = 10

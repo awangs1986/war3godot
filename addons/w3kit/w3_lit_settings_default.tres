@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/w3kit/w3_lit_settings.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+sun_intensity = 0.95
+sun_temperature_k = 5500.0
+sun_pitch_deg = -50.0
+sun_yaw_deg = 40.0
+sun_shadows = true
+ambient_intensity = 0.35
+fill_intensity = 0.18
+fog_enabled = false
+fog_distance = 4000.0
+fog_intensity = 0.35
