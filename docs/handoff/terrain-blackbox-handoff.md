@@ -60,3 +60,14 @@
 - `handoff`（https://github.com/awangs1986/catskills/tree/main/skills/productivity/handoff，下次交接再用；只读）
 - rea（https://github.com/morluto/rea，仅用于导入表/字符串等可读部分）
 - 文档写作保持“教学式”：原理 → 推导 → 数据 → 改法。
+
+## 更新：经典 1.27 WorldEdit 静态逆向（rea + Ghidra）
+
+- 结果见 `docs/classic-we-rea-comparison.md`；主文档里的更正都标了 **[1.27 源码更正]**。
+- 证据在 `~/w3_blackbox/classic/`：Ghidra 项目 `gh/we127`，脚本在 `scripts/`，反编译输出在 `out*/`，rea 证据在 `trace_smooth.json`。`rd.py` 要在 classic 目录下运行。
+- 已解决：整平边缘 h0−611 = MaxSlope 50° 坡度钳制；平滑 = 1-2-1 核除以 12；方形对整平/噪声/平滑有效；悬崖目标越界整笔拒绝；传播会写悬崖类型。
+- 待办：
+  - `terrain-reference` 的 Plateau 加坡度钳制，Smooth 改用 1-2-1 核，然后重跑。
+  - 找到贴图/荒芜的写入函数，读完边界的 `0x5f8070`。
+  - 用 1.32 实测方形整平。
+- 建议技能（Suggested skills）：catskills 的 rea、handoff。
