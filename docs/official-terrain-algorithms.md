@@ -193,7 +193,23 @@ BL=0, BR=1, TL=0, TR=1（单位层），点 (x=0.25,y=0.75)：y≥x → `0 + (TR
 
 法线由**原始 groundHeight 的中心差分**求出（不含 layer、不含 ramp 抬升），使悬崖台阶不会把周围地面"染暗"。`GroundLayout.cs:56-68` 已这样做，正确。
 
-### 4.4 本仓库对照
+### 4.4 伪代码
+
+```
+height_at(cell, x, y):            # 格内局部坐标 x, y ∈ [0,1)；沿 BL–TR 对角线切分
+    h = {BL, BR, TL, TR}          # 4 角的世界高度（最终地面高）
+    if y >= x:                    # 上三角 (BL, TL, TR)
+        return h.BL + (h.TL - h.BL) * y + (h.TR - h.TL) * x
+    else:                         # 下三角 (BL, BR, TR)
+        return h.BL + (h.BR - h.BL) * x + (h.TR - h.BR) * y
+
+normal(corner):                   # 中心差分；只用原始 groundHeight（不含 layer / ramp）
+    dx = (g[x+1,y] - g[x-1,y]) / (2 * cellWidth)
+    dy = (g[x,y+1] - g[x,y-1]) / (2 * cellWidth)
+    return normalize(-dx, -dy, 1)
+```
+
+### 4.5 本仓库对照
 
 | 位置 | 判断 | 优先级 |
 |---|---|---|
@@ -241,7 +257,22 @@ bit0 = BR 是该贴图   bit1 = BL   bit2 = TR   bit3 = TL
 
 **[官方数据]** CliffTypes.slk 的 `groundTile` 列：CLdi→Ldrt，CLgr→Lgrs，……；并且 `COrd` 有 `upperTile=Osmb`（悬崖上层用另一种地表）。
 
-### 5.4 本仓库对照
+### 5.4 伪代码
+
+```
+render_tile(tile):
+    corners = tile 的 4 个角
+    texs = 去重({c.groundTexture for c in corners}，按地图贴图列表索引升序)
+    base = texs[0]
+    整格铺 base（用变体格，由持有 base 的角的 groundVariation 决定）
+    for t in texs[1:]:
+        mask = 0
+        for (corner, bit) in [(BR,1), (BL,2), (TR,4), (TL,8)]:
+            if corner.groundTexture == t: mask |= bit
+        叠加 t 的过渡图集第 mask 格（alpha 混合）
+```
+
+### 5.5 本仓库对照
 
 | 位置 | 现状 | 判断 | 优先级 |
 |---|---|---|---|
@@ -275,7 +306,20 @@ Lordaeron 夏季：角点 waterHeight=1.2，ground=0.3，layer=2：
 `finalWater = 1.2 + (-0.7) = 0.5`；`finalGround = 0.3+2-2 = 0.3`；depth=0.2 层=25.6 单位 → 浅水段，value=(0.2-0.078)/(0.5-0.078)=0.29。
 若误用 -0.7 到 Ashenvale（应为 -0.6），水面会低 12.8 单位，**岸线整体内缩**。
 
-### 6.3 本仓库对照
+### 6.3 伪代码
+
+```
+finalWater(corner)  = corner.waterHeight + Water.slk[waterType].heightOffset
+finalGround(corner) = corner.groundHeight + corner.layer - 2
+depth = finalWater - finalGround                 # 世界单位
+if depth <= deepLevel:                           # 64/128 层（Warsmash 常量，社区共识）
+    color = lerp(Smin, Smax, (depth - minDepth) / (deepLevel - minDepth))
+else:
+    color = lerp(Dmin, Dmax, (depth - deepLevel) / (maxDepth - deepLevel))
+任一角有 water 标志 → 绘制该格水面
+```
+
+### 6.4 本仓库对照
 
 | 位置 | 现状 | 判断 | 优先级 |
 |---|---|---|---|
@@ -325,7 +369,7 @@ SmoothBrushWeightsReverse = 1.00, 0.05   // Shift：newZ = 1.00*oldZ + 0.05*avgZ
 | 地表贴图 | `Texture` | 有，但悬崖旁处理为空分支（`:253-256`） | P1 |
 | Blight | 无独立按钮 | 缺 | P1 |
 | Nothing/Unnothing | `BoundaryAdd/Remove` | 有 | — |
-| 深/浅水 | `WaterDeep/Shallow` | 有，水偏移错（6.3） | P0 |
+| 深/浅水 | `WaterDeep/Shallow` | 有，水偏移错（6.4） | P0 |
 | Ramp | `Ramp` | 有，有越界 bug（8.9） | P1 |
 | 悬崖 5 键 | `CliffLower2..CliffRaise2` | 有，传播 bug（8.6） | **P0** |
 | Raise/Lower | 有 | 衰减为 HiveWE 自定公式 | P1 |
@@ -410,7 +454,7 @@ SmoothBrushWeightsReverse = 1.00, 0.05   // Shift：newZ = 1.00*oldZ + 0.05*avgZ
   - `:458` `if (k == 0 && l == 0) continue;` → 应为 `if (k == i && l == j)`（HiveWE 原 bug，只跳过地图原点）。**P0**
   - `:461-463` `containsY = begy + (l - k)` → 应为 `(l - j)`；当前"是否在笔刷内"的判定错位，导致笔刷内的角被二次修改、笔刷外的角漏改 → 莫名台阶。**P0**
   - `:457` 传播时无条件把 3×3 邻居的 cliffTexture 改成源角的 → 会"染色"笔刷外的悬崖。[实测] 官方只在笔刷外扩一圈写贴图，传播不写，见 12.6。P1
-  - `:411-412` 非水笔刷时，若水面低于地面就清掉 water 标志：保留，但 `FinalWater` 偏移需用 Water.slk（6.3）。
+  - `:411-412` 非水笔刷时，若水面低于地面就清掉 water 标志：保留，但 `FinalWater` 偏移需用 Water.slk（6.4）。
 
 ### 8.7 浅水（ShallowWater）/ 8.8 深水（DeepWater）
 
