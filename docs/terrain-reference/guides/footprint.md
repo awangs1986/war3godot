@@ -1,6 +1,8 @@
 # 尺寸和形状
 
-> 参考实现：`src/Footprint.cs:11-41（Radius、Offsets、Dilate）`　对照结果：223/223（100%）：s5、s8 圆形，s3 方形（完整表格见 `../results.md`）
+> 参考实现：`src/Footprint.cs:11-40（Radius、Offsets、Dilate）`　对照结果：223/223（100%）：s5、s8 圆形，s3 方形（完整表格见 `../results.md`）
+> 验证范围：1.27源码+1.32存档验证（圆/方覆盖集合）。
+
 
 ## 原理
 尺寸只有 1/2/3/5/8，R = s−1；圆形 dx²+dy² ≤ R²，方形 max(|dx|,|dy|) ≤ R。中心永远是最近的角点。“外扩一圈”是 3×3 膨胀。
@@ -9,7 +11,7 @@
 s3：圆 13 点，膨胀 37 点；s5：圆 49 点；s8：圆 149 点；方形 s3：25 点。
 
 ## 对应代码
-`src/Footprint.cs:11-41（Radius、Offsets、Dilate）`。代码里每一段都有中文注释说明“为什么这样做”。
+`src/Footprint.cs:11-40（Radius、Offsets、Dilate）`。代码里每一段都有中文注释说明“为什么这样做”。
 
 ## 常见误区（对照你现在的写法）
 - 你的 `TerrainBrush.cs:115-118` 用 `cx − uiSize/2 + 1`，偶数尺寸会偏半格。

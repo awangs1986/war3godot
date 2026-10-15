@@ -821,7 +821,7 @@ s3 连点三次，得到 8/6/4/2 的同心方环。所以规则是：**任意两
 | P0 | `TerrainBrush.cs:316-321` | Raise/Lower 改为单次施加 `0.05·s·cos(πd/2R)`，不乘 frameDelta |
 | P0 | `TerrainBrush.cs:308-312` | 删掉 Ripple，新增 Noise：`±0.05·k`，k∈[−10,10] |
 | P0 | `TerrainBrush.cs:344-381` | Smooth 用快照，1-2-1 核 /12（中心权 0），权重 0.8/0.2；Shift 用 1.0/0.05 |
-| P0 | 高度笔刷写回后 | 新增 MaxSlope=50° 坡度钳制（参考 `docs/terrain-reference/src/HeightBrushes.cs` 的 `SlopeClamp`） |
+| P0 | 高度笔刷写回后 | 新增 MaxSlope=50° 坡度钳制（参考 `docs/terrain-reference/src/HeightPipeline.cs` 的 `SlopeClamp`） |
 | P1 | 悬崖 | 目标层越出 0..15 时整笔放弃，不要 clamp |
 | P0 | `TerrainBrush.cs:458,462` | 悬崖传播两处笔误；改成 8 邻接、层差 ≤ 2 的 BFS |
 | P0 | `TerrainBrush.cs:225-232` | 水面高度写到覆盖集合外扩一圈 |
