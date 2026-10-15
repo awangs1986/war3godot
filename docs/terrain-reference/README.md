@@ -9,7 +9,7 @@
 dotnet run --project docs/terrain-reference
 ```
 
-输出每个对照用例的匹配率，并写入 `results.md`（已提交一份）。
+输出每个对照用例的匹配率和**按算法验证强度表**（1.27源码+1.32存档验证 / 仅1.27源码 / 仅1.32存档），写入 `bin/.../results.md`（已提交一份到本目录）。
 
 ## 目录
 
@@ -17,7 +17,8 @@ dotnet run --project docs/terrain-reference
 |---|---|
 | `src/W3eMap.cs` | war3map.w3e 读取器 |
 | `src/Footprint.cs` | 尺寸和形状 |
-| `src/HeightBrushes.cs` | 升高、降低、整平、噪声、平滑 |
+| `src/HeightPipeline.cs` | 高度流水线：计算 → 量化 → 坡度/高度钳制 → 实际改动区 |
+| `src/HeightBrushes.cs` | 升高、降低、整平、噪声、平滑（只写“计算”这一步） |
 | `src/CliffBrushes.cs` | 悬崖升降与传播、悬崖类型、浅水、深水、坡道 |
 | `src/TextureBrushes.cs` | 贴图、荒芜、边界 |
 | `src/Rendering.cs` | 高度插值、地表过渡、海岸 |

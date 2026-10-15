@@ -23,10 +23,10 @@ public static class CliffBrushes
     /// 4) 0x573950 → 0x573b40 → 0x573990：层差传播（见 Propagate）。
     /// 官方第 3 步还会按水把每点夹到 [水决定的下限, MaxLayer]（0x5764a0），且夹后的值会改写 T，本实现未模拟。
     /// </summary>
-    public static void Cliff(W3eMap m, int cx, int cy, int size, Shape shape, int k, int cliffType)
+    public static bool Cliff(W3eMap m, int cx, int cy, int size, Shape shape, int k, int cliffType, int? targetLayer = null)
     {
-        int T = m[cx, cy].Layer + k;
-        if (T < 0 || T > MaxLayer) return;                         // 整笔拒绝
+        int T = targetLayer ?? m[cx, cy].Layer + k;               // 浅水/深水调用时直接给 T（this+0x94c 由水笔刷写入）
+        if (T < 0 || T > MaxLayer) return false;                   // 整笔拒绝【仅 1.27 源码】
         var cover = Footprint.Offsets(size, shape).ToList();
         foreach (var (dx, dy) in Footprint.Dilate(cover))
             if (m.Inside(cx + dx, cy + dy)) m[cx + dx, cy + dy].CliffTexture = cliffType;
@@ -40,6 +40,7 @@ public static class CliffBrushes
             brushed.Add((x, y));
         }
         Propagate(m, brushed, cliffType);
+        return true;
     }
 
     /// <summary>
@@ -81,32 +82,48 @@ public static class CliffBrushes
     }
 
     // ---------------- 浅水 / 深水 ----------------
+    /// <summary>L 地形水面偏移 −0.7 层（Water.slk，按 tileset 不同；A 为 −0.6）。</summary>
+    public static float WaterOffsetWorld = -0.7f * 128f;
+    /// <summary>深水在已有水面上额外下压的量（this+0x31c）。常数本身未读出；LS03→LS04 只约束它在 (38.4, 166.4) world 之间，这里取 128。【未验证常数】</summary>
+    public static float DeepExtraWorld = 128f;
+
     /// <summary>
-    /// 读中心原层级 L0、原高度 h0，然后：
-    ///  - 覆盖集合（d ≤ R）：层级 L0 − depth（浅水 1，深水 2），设 water 标志；
-    ///  - 外扩一圈：waterHeight = h0 + (L0 − 2)·512，悬崖贴图 = 当前悬崖类型；
-    ///  - d ≤ R+2：groundHeight = h0（先把岸边整平，水深才只取决于降了几层）。
+    /// 1.27 源码 0x603cc0（CTerrainWater.cpp）。水笔刷 = 写水 + 整平 + 悬崖，三步都复用已有流水线：
+    ///  1) 点击点 c：
+    ///     - 干地：Δ = 浅水 −1 / 深水 −2；
+    ///     - 已是水：Δ = floor((水面 − 地面总高)/128)，水面 = 现有水面 + 水偏移（深水再减 DeepExtra），地面总高 = 地面 + (L−2)·128；
+    ///     T = L(c) + Δ（→ this+0x94c）；h0 = c 的地面高度（→ this+0x948）；
+    ///     水面值 = 干地取 c 的地面总高，已是水取现有水面（→ this+0x778）。
+    ///  2) 覆盖集合（d ≤ R）设 water 标志；外扩一圈写水面高度（外扩一圈是 1.32 存档实测，1.27 源码这一步只看到覆盖集合，差异待查）。
+    ///  3) 调用整平（op 2），尺寸 s+2，值 h0 —— 走 HeightPipeline，所以陡坡上也会被坡度钳制。
+    ///  4) 调用悬崖笔刷，尺寸 s，目标 T —— 越界整笔拒绝、层差传播、写悬崖类型全部生效。
     /// </summary>
     public static void Water(W3eMap m, int cx, int cy, int size, int depth, int cliffType)
     {
-        int L0 = m[cx, cy].Layer, h0 = m[cx, cy].Height, R = Footprint.Radius(size);
+        var c = m[cx, cy];
+        int dL;
+        int waterRaw;
+        if (!c.Water)
+        {
+            dL = -depth;
+            waterRaw = c.Height + (c.Layer - 2) * 512;             // 地面总高（raw）
+        }
+        else
+        {
+            float surf = HeightPipeline.World(c.WaterHeight) + WaterOffsetWorld - (depth == 2 ? DeepExtraWorld : 0f);
+            float g = HeightPipeline.World(c.Height) + (c.Layer - 2) * 128f;
+            dL = (int)((surf - g) / 128f);
+            if (surf < g) dL -= 1;
+            waterRaw = c.WaterHeight;
+        }
+        int T = c.Layer + dL, h0 = c.Height;
         var cover = Footprint.Offsets(size, Shape.Circle).ToList();
-        for (int dy = -(R + 2); dy <= R + 2; dy++)
-            for (int dx = -(R + 2); dx <= R + 2; dx++)
-                if (dx * dx + dy * dy <= (R + 2) * (R + 2) && m.Inside(cx + dx, cy + dy))
-                    m[cx + dx, cy + dy].Height = h0;
         foreach (var (dx, dy) in Footprint.Dilate(cover))
-            if (m.Inside(cx + dx, cy + dy))
-            {
-                m[cx + dx, cy + dy].WaterHeight = h0 + (L0 - 2) * 512;
-                m[cx + dx, cy + dy].CliffTexture = cliffType;
-            }
+            if (m.Inside(cx + dx, cy + dy)) m[cx + dx, cy + dy].WaterHeight = waterRaw;
         foreach (var (dx, dy) in cover)
-            if (m.Inside(cx + dx, cy + dy))
-            {
-                m[cx + dx, cy + dy].Layer = Math.Max(0, L0 - depth);
-                m[cx + dx, cy + dy].Water = true;
-            }
+            if (m.Inside(cx + dx, cy + dy)) m[cx + dx, cy + dy].Water = true;
+        HeightBrushes.Plateau(m, cx, cy, size + 2, Shape.Circle, h0);
+        Cliff(m, cx, cy, size, Shape.Circle, 0, cliffType, T);
     }
 
     // ---------------- 坡道 ----------------

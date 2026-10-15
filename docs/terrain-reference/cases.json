@@ -177,8 +177,21 @@
   "cy": 31,
   "k": 2,
   "ct": 1,
-  "repeat": 2,
-  "note": "存档名是 x3，但只有 2 次点击生效"
+  "note": "命中角点未记录；由 5×5 偏移穷举搜索推断（第 1 次落在 (31,32)），L+ct 全部吻合。属于假设，需按 guides/cliff.md 的流程重做",
+  "clicks": [
+   [
+    0,
+    1
+   ],
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    0
+   ]
+  ]
  },
  {
   "algo": "cliff_repeat",
@@ -191,7 +204,8 @@
   "cy": 29,
   "k": 2,
   "ct": 1,
-  "repeat": 3
+  "repeat": 3,
+  "note": "命中角点未记录；3 次点击在 ±2 内穷举最好仍差 10 个字段，可能有拖动或更多次施加。未证实"
  },
  {
   "algo": "cliff_type",
@@ -424,5 +438,67 @@
   "k": 1,
   "ct": 1,
   "tex": 1
+ },
+ {
+  "algo": "noise",
+  "before": "base",
+  "after": "noise_s1",
+  "op": "noise",
+  "size": 1,
+  "shape": "circle",
+  "cx": 31,
+  "cy": 32
+ },
+ {
+  "algo": "noise",
+  "before": "base",
+  "after": "noise_s3",
+  "op": "noise",
+  "size": 3,
+  "shape": "circle",
+  "cx": 31,
+  "cy": 32
+ },
+ {
+  "algo": "noise",
+  "before": "base",
+  "after": "noise_s5_b",
+  "op": "noise",
+  "size": 5,
+  "shape": "circle",
+  "cx": 31,
+  "cy": 32
+ },
+ {
+  "algo": "noise",
+  "before": "base",
+  "after": "noise_s5_shift",
+  "op": "noise",
+  "size": 5,
+  "shape": "circle",
+  "cx": 31,
+  "cy": 32
+ },
+ {
+  "algo": "noise",
+  "before": "B3",
+  "after": "noise_s8",
+  "op": "noise",
+  "size": 8,
+  "shape": "circle",
+  "cx": 31,
+  "cy": 32
+ },
+ {
+  "algo": "water_on_water",
+  "before": "LS03_shallow",
+  "after": "LS04_deep",
+  "op": "deep",
+  "size": 3,
+  "shape": "circle",
+  "cx": 32,
+  "cy": 41,
+  "ct": 1,
+  "note": "已有浅水上放深水"
  }
 ]
