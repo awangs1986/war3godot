@@ -11,44 +11,73 @@ public static class CliffBrushes
     public static int CliffTypeIndex(W3eMap m, string cliffId) => m.CliffIds.IndexOf(cliffId);
 
     // ---------------- 悬崖 −2..+2 ----------------
+    public const int MaxLayer = 15;   // this+0x988
+    static readonly Random VariantRng = new(1);
+
     /// <summary>
-    /// 1) 目标层 T = clamp(L(中心)+k, 0, 15)，覆盖集合内层级 = T；
-    /// 2) 悬崖贴图写到覆盖集合“外扩一圈”；
-    /// 3) 传播：任意两个 8 邻接角点层差不能 > 2，超了就把外侧拉到“内侧 ∓ 2”，继续 BFS。
-    /// 为什么是 8 邻接：连点两次 +2 得到的是方环（切比雪夫距离），不是菱形。
+    /// 1.27 源码 0x574470（CTerrainCliff.cpp）：
+    /// 1) 按下时 T = L(中心) + Δ（0x574a50 按钮→Δ），存进 this+0x94c，拖动全程用它；
+    /// 2) T &lt; 0 或 T &gt; MaxLayer → 整笔什么都不做（是“拒绝”，不是 clamp）；
+    /// 3) 覆盖集合（圆：dist²/(s−1)² ≤ 1；方形：全部）里层级或悬崖类型不同的点：写层级 T、类型、随机变体，
+    ///    顶点字节 +0xb 置 1（传播时不会再碰这些点）；0x5748c0 把类型+变体写到 3×3 外扩；
+    /// 4) 0x573950 → 0x573b40 → 0x573990：层差传播（见 Propagate）。
+    /// 官方第 3 步还会按水把每点夹到 [水决定的下限, MaxLayer]（0x5764a0），且夹后的值会改写 T，本实现未模拟。
     /// </summary>
     public static void Cliff(W3eMap m, int cx, int cy, int size, Shape shape, int k, int cliffType)
     {
-        int T = Math.Clamp(m[cx, cy].Layer + k, 0, 15);
+        int T = m[cx, cy].Layer + k;
+        if (T < 0 || T > MaxLayer) return;                         // 整笔拒绝
         var cover = Footprint.Offsets(size, shape).ToList();
         foreach (var (dx, dy) in Footprint.Dilate(cover))
             if (m.Inside(cx + dx, cy + dy)) m[cx + dx, cy + dy].CliffTexture = cliffType;
-        var queue = new Queue<(int, int)>();
+        var brushed = new HashSet<(int, int)>();
         foreach (var (dx, dy) in cover)
         {
             int x = cx + dx, y = cy + dy;
             if (!m.Inside(x, y)) continue;
-            m[x, y].Layer = T; queue.Enqueue((x, y));
+            m[x, y].Layer = T; m[x, y].CliffTexture = cliffType;
+            m[x, y].CliffVariation = VariantRng.Next(8);
+            brushed.Add((x, y));
         }
-        Propagate(m, queue);
+        Propagate(m, brushed, cliffType);
     }
 
-    static void Propagate(W3eMap m, Queue<(int x, int y)> queue)
+    /// <summary>
+    /// 0x573990：检查点 (x,y) 的 8 个邻居，邻居层级夹到 [L−2, L+2]（再夹到 0..MaxLayer）；
+    /// 变了就同时写入**所选悬崖类型和随机变体**，深度字节记为 d+1，然后以邻居为中心递归。
+    /// 已经被笔刷写过（字节 1）或在更浅深度处理过的点不再改。
+    /// 起点：改动区包围矩形外扩一圈，x 外层、y 内层，每点以深度 1 调用。
+    /// 为什么是 8 邻接：连点两次 +2 得到的是方环（切比雪夫距离），不是菱形。
+    /// </summary>
+    static void Propagate(W3eMap m, HashSet<(int x, int y)> brushed, int cliffType)
     {
-        while (queue.Count > 0)
+        if (brushed.Count == 0) return;
+        var depth = brushed.ToDictionary(p => p, _ => 1);
+        void Visit(int x, int y, int d)
         {
-            var (x, y) = queue.Dequeue();
             int L = m[x, y].Layer;
-            for (int j = -1; j <= 1; j++)
-                for (int i = -1; i <= 1; i++)
+            for (int i = -1; i <= 1; i++)
+                for (int j = -1; j <= 1; j++)
                 {
                     int nx = x + i, ny = y + j;
                     if ((i == 0 && j == 0) || !m.Inside(nx, ny)) continue;
-                    int nL = m[nx, ny].Layer;
-                    if (nL > L + 2) { m[nx, ny].Layer = L + 2; queue.Enqueue((nx, ny)); }
-                    else if (nL < L - 2) { m[nx, ny].Layer = L - 2; queue.Enqueue((nx, ny)); }
+                    if (depth.TryGetValue((nx, ny), out int seen) && !(d < seen)) continue;
+                    int nL = m[nx, ny].Layer, t = nL;
+                    if (t > L + 2) t = L + 2;
+                    if (t < L - 2) t = L - 2;
+                    t = Math.Clamp(t, 0, MaxLayer);
+                    if (t == nL) continue;
+                    m[nx, ny].Layer = t;
+                    if (cliffType != -1) m[nx, ny].CliffTexture = cliffType;   // 传播点也染悬崖类型
+                    m[nx, ny].CliffVariation = VariantRng.Next(8);
+                    depth[(nx, ny)] = d + 1;
+                    Visit(nx, ny, d + 1);
                 }
         }
+        int x0 = brushed.Min(p => p.x) - 1, x1 = brushed.Max(p => p.x) + 1, y0 = brushed.Min(p => p.y) - 1, y1 = brushed.Max(p => p.y) + 1;
+        for (int x = x0; x <= x1; x++)
+            for (int y = y0; y <= y1; y++)
+                if (m.Inside(x, y)) Visit(x, y, 1);
     }
 
     // ---------------- 浅水 / 深水 ----------------

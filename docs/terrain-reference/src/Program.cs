@@ -37,10 +37,10 @@ foreach (var c in cases)
     {
         case "raise": HeightBrushes.RaiseLower(P, cx, cy, size, +1); break;
         case "lower": HeightBrushes.RaiseLower(P, cx, cy, size, -1); break;
-        case "plateau": HeightBrushes.Plateau(P, cx, cy, size); break;
-        case "smooth": HeightBrushes.Smooth(P, cx, cy, size, false); break;
-        case "smooth_shift": HeightBrushes.Smooth(P, cx, cy, size, true); break;
-        case "noise": HeightBrushes.Noise(P, cx, cy, size, new Random(1)); break;
+        case "plateau": HeightBrushes.Plateau(P, cx, cy, size, shape); break;
+        case "smooth": HeightBrushes.Smooth(P, cx, cy, size, false, shape); break;
+        case "smooth_shift": HeightBrushes.Smooth(P, cx, cy, size, true, shape); break;
+        case "noise": HeightBrushes.Noise(P, cx, cy, size, new Random(1), shape); break;
         case "cliff": for (int i = 0; i < Int("repeat", 1); i++) CliffBrushes.Cliff(P, cx, cy, size, shape, Int("k", 1), ct); break;
         case "shallow": CliffBrushes.Water(P, cx, cy, size, 1, ct); break;
         case "deep": CliffBrushes.Water(P, cx, cy, size, 2, ct); break;
@@ -53,7 +53,7 @@ foreach (var c in cases)
     if (algo == "noise")
     {
         // 噪声是随机的：只检查“官方改动的角点都在覆盖集合内，且幅度 ≤ 0.5 层”
-        var cover = Footprint.Offsets(size, Shape.Circle).Select(o => (cx + o.dx, cy + o.dy)).ToHashSet();
+        var cover = Footprint.Offsets(size, shape).Select(o => (cx + o.dx, cy + o.dy)).ToHashSet();
         for (int y = 0; y < A.Height; y++) for (int x = 0; x < A.Width; x++)
         {
             int d = B[x, y].Height - A[x, y].Height; if (d == 0) continue;
