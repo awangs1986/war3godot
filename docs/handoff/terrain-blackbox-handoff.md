@@ -1,73 +1,57 @@
-# 交接文档：war3godot 官方地形算法黑盒实测
+# 交接文档：war3godot 官方地形算法（黑盒实测 + 1.27 静态逆向）
 
-> 下一次会话用途：继续用黑盒实验补齐 War3 1.32.10 官方世界编辑器地形按钮的未定论项，并以教学方式更新文档，让用户（个人开发者）真正学会算法原理，而不是只拿结论。
+> 下一次会话用途：补齐“仅1.27源码 / 未测”的项（陡坡放水、方形高度笔刷、连点命中点、水相关钳制），找贴图/荒芜/边界写入函数，解释 711 raw 差距；继续以教学方式（原理 → 推导 → 数据 → 改法）帮用户自己改 war3godot。
+> 更新：2026-10-15（UTC+8）
 
 ## 1. 目标
-- 用户项目：war3godot（Gitea http://gitea:3000/awangs/diablo1like，Godot 4.7 .NET C#）。地形（悬崖、不同地表接缝、海岸、高度、编辑器笔刷）长期对不上原版。
-- 目标：通过官方编辑器的**输入/输出黑盒实验**，把每个工具面板按钮的真实算法教给用户（原理 → 推导 → 实测数据 → 对应用户代码位置）。用户自己对照修改源码。
+- 项目 war3godot：Gitea http://gitea:3000/awangs/diablo1like（Godot 4.7 .NET / C# / .NET 8）。悬崖、地表接缝、海岸、高度、编辑器笔刷与原版不符。
+- 用户要**学会算法本身**，自己改源码；我们只交付 `docs/`（文档 + 教学参考代码）。
 
-## 2. 已有产物（不在此重复，请直接读）
-- 主文档：分支 `docs/official-terrain-algorithms` 上的 `docs/official-terrain-algorithms.md`，PR #1：http://gitea:3000/awangs/diablo1like/pulls/1
-  - 第 12 章：每个按钮一节的实测定论（12.0–12.13）
-  - 12.14：已定论 / 仍未定论清单（以它为准）
-  - 12.15：P0/P1/P2 修改建议汇总表（对应 `TerrainBrush.cs`、`GroundLayout.cs` 等行号）
-  - 第 9 章：实验方法
-- 提交：`8363942`（第二轮），`2064cff`（第三轮：A 地形、坡道两层差/拐角、整平边缘、放水整平地面）
+## 2. 产物（直接读，不重复）
+| 产物 | 位置 |
+|---|---|
+| PR #1：主文档 + 1.27 对照，最新 `0c966e9` | http://gitea:3000/awangs/diablo1like/pulls/1（分支 `docs/official-terrain-algorithms`） |
+| PR #2：参考实现按 1.27 修正 + 流水线重构 + 验证强度表 | http://gitea:3000/awangs/diablo1like/pulls/2（分支 `docs/terrain-reference-127`，**叠在 PR #1 上**；PR #1 合并后把 base 改为 main）。提交 `3dfa3fe` 及之后（见 `git log`） |
+| 主文档（12 章逐按钮；12.14.1 验证强度表；12.15 改法） | `docs/official-terrain-algorithms.md` |
+| 1.27 函数地址与逐项结论 | `docs/classic-we-rea-comparison.md` |
+| 参考实现 / 导读 / 结果 | `docs/terrain-reference/`（`src/HeightPipeline.cs` 是新的公共流水线；`results.md` 有按算法验证强度表、噪声分布表、“仅1.27源码”清单） |
 
-## 2.1 第四轮新增
-- 文档：12.5 平滑更正为 9 点平均；12.13.1 多 tileset、北侧坡道、四贴图同格、荒芜与水；12.14.1 参考实现匹配率表。
-- 教学代码：`docs/terrain-reference/`（.NET 8，`dotnet run --project docs/terrain-reference`，SDK 在用户机 `~/w3_blackbox/tools/dotnet`）。导读在 `guides/`，结果在 `results.md`。
-- 新脚本：`nm.py`（新建地图选 tileset：Alt+T、Home、Down×n、回车；顺序 A,B,K,Y,X,J,D,C,I,F,L,W,N,O,Z,G,V）、`tsb.py`、`s1b.py`、`s1c.py`、`prep_fixtures.py`（从存档抽 fixtures 和 cases.json）、`launch.sh`。
+## 3. 当前状态（数字以 `results.md` 为准）
+- 不再给总匹配率，改为按算法 + 验证范围（`1.27源码+1.32存档验证` / `仅1.27源码` / `仅1.32存档`）。
+- 流水线：高度计算 → 量化 trunc((world+2048)·4) → 坡度/高度钳制（MaxSlope 50°，610.2 raw）→ 返回实际改动区。升高、降低、整平、噪声、平滑都走这条；浅水/深水 = 写水 + 整平(s+2, h0) + 悬崖(s, T)。
+- 噪声测试现在检查官方**和参考实现**输出的范围 + 量化格点（6 个存档 601/601），另做 k 分布统计（TV 与抽样波动同量级）。
+- 悬崖连点测试现在比较层级 + 悬崖类型：158/178。
+  - `P_c+2_s1_x3`：命中点由穷举推断（第 1 次在 (31,32)），21/21，**只说明假设自洽，不算验证**。
+  - `P_c+2_s3_x3`：137/157（4 L + 16 ct）。±2 内穷举 3 次点击最好仍差 10，**未解释**；可能有拖动或多施加。重做流程见 `guides/cliff.md`“逐次记录真实命中角点”。
+- 新增“已有浅水上放深水” `LS03_shallow → LS04_deep` 21/21；`DeepExtra`（this+0x31c）常数未读出，只知在 (38.4,166.4) world，参考取 128。
+- 仅1.27源码 / 未实现 / 未测：方形整平·噪声·平滑；悬崖越界整笔拒绝；MaxHeight/MinHeight；钳制里的水下限（0x51dcb0/0x605fc0/0x605020，未实现）；悬崖按水夹层 0x5764a0（未实现）；悬崖后高度修正 0x57f270→0x57ef30（未实现）；陡坡放水（未测）；水面写到外扩一圈（1.32 实测）与 1.27 只写覆盖集合的差异。
+- 1.27 未覆盖：贴图、荒芜写入函数未定位；边界只到 0x5f7d10（→0x5f8070/0x63c250）。
+- **711 raw 差距**未解释（见主文档 12.14）。可能与层偏移常数 `DAT_0086b494` / `DAT_008a9764` 有关。
 
-## 3. 关键发现速览（详情见文档对应节）
-- 用户代码照抄 HiveWE/Warsmash（社区实现），连笔误一起抄（悬崖传播 `:458`/`:462`，边界 `:534`）。
-- 升高/降低：单次施加 `0.05·s·cos(πd/2R)` 层，非按帧（12.1）。平滑 0.8/0.2，Shift 1.0/0.05（12.5）。噪声 ±0.05·k（12.4）。
-- 悬崖传播：8 邻接层差 ≤ 2 的 BFS（12.6）；ct 写入本图悬崖列表下标而非按钮序号。
-- 水：层级 d≤R，水面 d≤R+1 = h0+(L0−2)·512，地面 d≤R+2 整平为 h0（12.7）——海岸接缝主因之一。
-- 坡道：只在层差=1 生效，3 个角；拐角斜外侧写 3×3（12.9）。
-- 渲染：悬崖格用悬崖类型地表，并按 4 角掩码向邻格过渡半格（12.13）。
-- 悬崖底边缝：悬崖顶点双线性 vs 地面三角插值不一致（`TerrainSurfaceGeometry.cs:21-24,43`）；水偏移写死 −0.7 应读 Water.slk。
+## 4. 下一步
+1. 先问用户“下一步计划”（用户说过要讲，还没讲）。
+2. 黑盒补实验（需用户同意占用桌面）：陡坡放浅/深水；方形整平/噪声/平滑；连点逐次存档记录命中点；已有深水上放浅水。
+3. Ghidra 读常数 `DAT_0086b494`、`DAT_008a9764`、`DAT_007ee13c`、`DAT_007cbd40`、`DAT_0086b618`、this+0x31c 来源，核对 (L−2)·128、181.02、128、DeepExtra。
+4. 找贴图/荒芜写入函数（`CTerrain*.cpp` 字符串），读完边界 0x5f8070。
+5. 实现水相关下限与悬崖后高度修正，加用例。
+6. 追 711 raw 差距。
 
-## 4. 未定论项（下一步计划，第四轮后以 12.14 为准）
-- 整平边缘公式；水面常数定量；荒芜点在水边（非中心）角点；平滑剩下 1 raw 误差的来源。
-
-<!-- 以下为第三轮时的清单 -->
-
-1. 整平边缘“半施加”的精确公式（经验：相机一侧外圈 ≥ h0−611，固定配方 100% 复现，见 12.3）。
-2. A(−0.6) 与 L(−0.7) 水面常数、水色的逐像素截图比对；其他 tileset（B、N…）——需先标定“新建地图”对话框 tileset 列表坐标（`drv.newmap(ts_xy)`）。
-3. 北侧坡道（相机遮挡未点中，可移动镜头后重测）。
-4. 多纹理叠放：4 贴图同格、荒芜+水边等更多放大截图核对。
-5. 完成后更新 12.x 和 12.14，提交到同一分支。
-
-## 5. 实验环境（用户机 awangs-linux，所有命令在用户机执行）
-- 目录 `~/w3_blackbox/`：
-  - `drv.py`（python-xlib/XTEST 驱动：`tool()` 选按钮并只勾对应组、`pal()`、`apply()`、`drag()`、`undo()`、`saveas()`、`shot()`、`recenter()`、`newmap()`）
-  - `w3e.py`（解析 war3map.w3e；`python3 w3e.py a.w3m b.w3m` 逐角点差分）、`absdump.py`、`fitsm.py`、`fld.py`
-  - 批次脚本：`batch*.py`、`batchA.py`、`texA.py`、`scene.py`、`pl2.py`、`pl3.py`、`rp.py`、`rp2.py`、`tz.py`
-  - `maps/`：约 200 份存档（`base*`、`LS00–12`、`A_*`、`P2_*`/`P3_*` 整平、`R1/R2/R3_*` 坡道、`TZ_scene`）；`shots/` 截图；`prefix/` Proton 前缀；`tools/`（rea、Ghidra 12.1.4、JDK21、Node22，`source tools/env.sh`）
-- 启动编辑器：在 `<游戏目录>/_retail_/x86_64` 用 `Proton - Experimental` 的 `proton run "World Editor.exe" -launch`，`STEAM_COMPAT_DATA_PATH=~/w3_blackbox/prefix`。**必须带 `-launch`**，否则启动的是游戏。启动后关欢迎窗，确认标题为“魔兽争霸III地图编辑器”。
-- **面板位置**：drv.py 写死工具面板客户区在 (1592,307)。若跑偏，`wmctrl -i -r <工具面板窗口id> -e 0,1592,307,-1,-1`（wmctrl 随后报告 1612,379 属正常）。用 `checked()` 验证勾选框读取正常后再跑实验。
-- 三个勾选框（纹理/悬崖/高度）：纹理组与另两组可组合，每次实验确认只勾要测的那组（`tool()` 已处理）。
-- 编辑器跑在用户正在用的桌面上，实验期间会移动鼠标；结束后关闭编辑器并 `wineserver -k`，用 `pgrep -af "World Editor|wineserver|drv.py"` 确认无残留。
+## 5. 环境（用户机 awangs-linux，machineId `6af1add5-3c0e-4985-869e-5ad95c46e310`）
+- `~/w3_blackbox/`：`drv.py`（XTEST 驱动；`tool()`、`apply()`、`saveas()`、`recenter()` 等）、`w3e.py`（`python3 w3e.py a.w3m b.w3m` 逐角点差分）、`prep_fixtures.py`（存档 → fixtures/cases.json）、批次脚本、`maps/`（约 300 份存档）、`shots/`、`prefix/`（Proton 前缀）、`tools/`（rea、Ghidra 12.1.4、JDK21、Node22、`tools/dotnet` = .NET 8 SDK、`tools/py/mpyq`；`source tools/env.sh`）。
+  - 启动编辑器：游戏目录 `_retail_/x86_64` 下 `proton run "World Editor.exe" -launch`（**必须 `-launch`**，否则是游戏），`STEAM_COMPAT_DATA_PATH=~/w3_blackbox/prefix`；工具面板跑偏用 `wmctrl` 移回 (1592,307)。结束后 `wineserver -k`。详见主文档第 9 章。
+- `~/w3_blackbox/classic/`：1.27 `WorldEdit.exe`、`WorldEditData_127.txt`、`we127.snap`、`trace_smooth.json`、Ghidra 项目 `gh/we127`、`scripts/`（DumpRefs/FindUse/Decomp/Dis.java）、`out/ out2/ out3/`（`out3/index.txt`）、`rd.py`（在 classic 目录运行）。
+  - `analyzeHeadless gh we127 -process WorldEdit.exe -noanalysis -readOnly -scriptPath scripts -postScript Decomp.java 0x<addr>,... out4`
+- 跑参考实现：`cd docs/terrain-reference && PATH=~/w3_blackbox/tools/dotnet:$PATH dotnet run -c Release`，结果在 `bin/.../results.md`，拷回时保留文件头说明，删 bin/obj。
+- 用户本地仓库 `/media/awang/108859E68859CABC/godot project/diablo1like`：`main` = Gitea main `7cda4d0`；旧历史在分支 `backup/pre-gitea-2026-10-15` 和 `stash@{0}`（“backup before update to gitea main 2026-10-15”）。**不要删**。
+- `/tmp/w3nuget.config`：临时 NuGet 配置（仅 nuget.org 源），丢了重建。
 
 ## 6. 红线
-- 不做内存 dump、不附加调试器、不脱壳（exe 磁盘代码加密，静态分析读不出算法），只看编辑器输入/输出。
-- 资源包不整包拷贝；需要时在用户机只读提取小文件。
-- 不改仓库源码，只改文档。实验数据留在 `~/w3_blackbox`，不删。
-- 只推送到 Gitea，不往 GitHub 推任何东西。凭据（已脱敏，向用户确认）只放在单条 push URL 里，不写入文件或 git 配置；推完删临时目录并检查 shell 历史。
+- 1.32：不 dump 内存、不挂调试器、不脱壳，只黑盒。1.27（未加密）可静态分析。
+- 资源包不整包拷贝；只改 `docs/`；`~/w3_blackbox` 不删。
+- 只推 Gitea，不推 GitHub（catskills 只读）。凭据 **[已脱敏]**，向用户确认；只放单条 push URL / 单次 API 请求头，不写文件或 git 配置；推完删临时克隆、清 shell 历史。已建议用户改密码。
+- 对用户：中文，每段结尾一个「喵！」。
 
 ## 7. Suggested skills
-- `handoff`（https://github.com/awangs1986/catskills/tree/main/skills/productivity/handoff，下次交接再用；只读）
-- rea（https://github.com/morluto/rea，仅用于导入表/字符串等可读部分）
-- 文档写作保持“教学式”：原理 → 推导 → 数据 → 改法。
-
-## 更新：经典 1.27 WorldEdit 静态逆向（rea + Ghidra）
-
-- 结果见 `docs/classic-we-rea-comparison.md`；主文档里的更正都标了 **[1.27 源码更正]**。
-- 证据在 `~/w3_blackbox/classic/`：Ghidra 项目 `gh/we127`，脚本在 `scripts/`，反编译输出在 `out*/`，rea 证据在 `trace_smooth.json`。`rd.py` 要在 classic 目录下运行。
-- 已解决：整平边缘 h0−611 = MaxSlope 50° 坡度钳制；平滑 = 1-2-1 核除以 12；方形对整平/噪声/平滑有效；悬崖目标越界整笔拒绝；传播会写悬崖类型。
-- 待办：
-  - `terrain-reference` 的 Plateau 加坡度钳制，Smooth 改用 1-2-1 核，然后重跑。
-  - 找到贴图/荒芜的写入函数，读完边界的 `0x5f8070`。
-  - 用 1.32 实测方形整平。
-- 建议技能（Suggested skills）：catskills 的 rea、handoff。
+- `handoff`（https://github.com/awangs1986/catskills/tree/main/skills/productivity/handoff，只读）
+- rea（https://github.com/morluto/rea）+ Ghidra headless：1.27 静态分析
+- 教学式文档：原理 → 推导 → 数据 → 改法；每条结论标验证范围
