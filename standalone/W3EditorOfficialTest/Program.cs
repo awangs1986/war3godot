@@ -180,6 +180,16 @@ for (int ci = 0; ci < cases.Count; ci++)
         case "shallow": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterShallow, Radius = size, CliffTextureId = ct }); break;
         case "deep": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterDeep, Radius = size, CliffTextureId = ct }); break;
         case "ramp": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size }); break;
+        case "none":
+            // 官方在此用例中**无任何落笔**（撤销后态/已有水再点/坡道再点或右键）：
+            // 实现侧同样不应产生改动；任何差异都会作为未登记差异失败。
+            break;
+        case "ramp_shift_remove":
+            // 官方实测（Y10_ramp_made → Y10_ramp_shift）：同一组 ramp 角点上 **Shift 点击 → ramp 旗 1→0**。
+            // 这里按"Shift 是 BrushSettings 上的修饰键"驱动实现（与 smooth_shift 同路径），
+            // 不读 after 的答案。实现目前 Ramp 忽略 Shift ⇒ 9 点差异 ⇒ 该回归会失败（缺口可见）。
+            Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size, Shift = true });
+            break;
         case "texture": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Texture, Radius = size, Shape = shape, TextureIndex = Int("tex", 1) }); break;
         case "blight": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Blight, Radius = size, Shape = shape }); break;
         case "boundary": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.BoundaryAdd, Radius = size, Shape = shape }); break;
@@ -258,12 +268,25 @@ for (int ci = 0; ci < cases.Count; ci++)
                 if (a == b && a == p) continue;
                 all++;
                 if (b == p) { ok++; continue; }
-                // 逐坐标逐字段差异
+                // 逐坐标逐字段差异：登记项必须同时锁定 (case,x,y,field) 与 (官方 expected, 实现 actual)；
+                // 若 expected/actual 任一对不上，按未登记处理（防止实现退化被豁免）。
                 string key = $"{caseKey}|{x}|{y}|{f}";
                 if (knownIndex.TryGetValue(key, out var ke))
                 {
-                    knownUsed.Add(key);
-                    knownHits.Add($"- [{caseKey}] ({x},{y}) {f}: 官方={b} 用户={p} — 状态={ke.GetProperty("status").GetString()}，原因={ke.GetProperty("reason").GetString()}");
+                    int exp = ke.GetProperty("expected").GetInt32();
+                    int act = ke.GetProperty("actual").GetInt32();
+                    if (exp == b && act == p)
+                    {
+                        knownUsed.Add(key);
+                        knownHits.Add($"- [{caseKey}] ({x},{y}) {f}: 官方={b} 用户={p} — 状态={ke.GetProperty("status").GetString()}，原因={ke.GetProperty("reason").GetString()}");
+                    }
+                    else
+                    {
+                        string drift = $"[{caseKey}] ({x},{y}) {f}：登记期望(官方={exp},实现={act})，本次实测(官方={b},用户={p})";
+                        if (diffLines.Count < diffLimit)
+                            diffLines.Add(drift);
+                        unregistered.Add(drift);
+                    }
                 }
                 else
                 {
@@ -358,11 +381,12 @@ foreach (var line in File.ReadAllLines(resultsPath))
     refMismatch.Add($"  {key}: 用户 {mv} vs 参考 {rok}/{rall}" + (allKnown ? "（差异已登记，判为未决）" : "（含未登记差异）"));
     if (!allKnown) HardFail($"用例 {key} 与参考 results.md 不一致且存在未登记差异");
 }
-Console.WriteLine($"参考 results.md 用例行: {refRows}，逐用例一致: {sameRows}，cases.json 用例行: {cases.Count}");
+Console.WriteLine($"参考 results.md 用例行: {refRows}，逐用例一致: {sameRows}；cases.json 共 {cases.Count}（其中 {cases.Count(c => c.TryGetProperty("no_reference", out var nr2) && nr2.GetBoolean())} 条为新增回归用例，官方字节直采、无参考行）");
 foreach (var l in refMismatch) Console.WriteLine(l);
 foreach (var l in refUnknown) Console.WriteLine(l);
 if (refRows == 0) HardFail("results.md 未解析出任何用例行（预期结果缺失或格式错误）");
-if (refRows != cases.Count) HardFail($"results.md 用例行数({refRows}) 与 cases.json({cases.Count}) 不一致");
+int refExpected = cases.Count(c => !(c.TryGetProperty("no_reference", out var nr) && nr.GetBoolean()));
+if (refRows != refExpected) HardFail($"results.md 用例行数({refRows}) 与 cases.json 中「有参考行」用例数({refExpected}) 不一致（新增回归用例以 no_reference 标注，官方字节直采）");
 if (refUnknown.Count > 0) HardFail("results.md 中存在 cases.json 没有的用例（预期用例与实际用例不匹配）");
 if (stale.Count == 0 && refMismatch.Count == 0 && sameRows == refRows)
     Console.WriteLine("全部一致：用户 TerrainBrush 与已验证参考实现在同一组官方 fixture 上行为逐坐标逐字段相同。");

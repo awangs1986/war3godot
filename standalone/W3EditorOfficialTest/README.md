@@ -42,6 +42,19 @@ dotnet run -- docs/terrain-reference --diff-limit 200
 
 **已登记的未决差异不会让运行失败**，但会在 `A.3` 逐点列出——它们不能被当作通过。
 
+## 用例字段（新增回归用例）
+
+`cases.json` 除既有字段外，新增回归用例用到：
+
+| 字段 | 含义 |
+|---|---|
+| `op: "none"` | 官方在该用例中**无任何落笔**（撤销后态 / 已有水再点 / 坡道再点或右键）⇒ 实现也不应产生改动；任何差异按未登记差异失败 |
+| `op: "ramp_shift_remove"` | Shift 点击移除同组 ramp 旗（用 `BrushSettings.Shift` 驱动，**不读 after 的答案**） |
+| `no_reference: true` | 该用例是"官方字节直采"的新回归用例，**不在参考实现 `results.md` 中**；A.6 的行数一致性只统计有参考行的用例 |
+
+> 这些用例的 `before` 必须是**实验当时真正的基准图**（例如 `X1_base` 而不是 `Y0_L_base`——两图创建时的随机
+> ground variation 不同，全图会有数千处 `gv` 差异，不能混用作基准）。
+
 ## 未决差异登记
 
 `docs/terrain-reference/known-differences.json`
