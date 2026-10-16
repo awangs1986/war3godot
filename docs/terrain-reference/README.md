@@ -32,3 +32,16 @@ dotnet run --project docs/terrain-reference
 ## 导读
 
 [升高/降低](guides/raise-lower.md) · [整平](guides/plateau.md) · [噪声](guides/noise.md) · [平滑](guides/smooth.md) · [悬崖](guides/cliff.md) · [悬崖类型](guides/cliff-type.md) · [坡道](guides/ramp.md) · [浅水/深水](guides/water.md) · [贴图](guides/texture.md) · [荒芜](guides/blight.md) · [边界](guides/boundary.md) · [尺寸和形状](guides/footprint.md) · [高度插值](guides/height-interpolation.md) · [地表过渡](guides/ground-transition.md) · [海岸](guides/shore.md)
+
+## 1.32 官方二进制实证文档
+
+本目录另有一组**直接从 1.32.10.18820 编辑器二进制逆向**的文档，与本参考实现互为对照（参考实现 = 1.27 源码 + 1.32 存档对照；实证文档 = 1.32 内存捕获 + 反编译）：
+
+| 文件 | 内容 |
+|---|---|
+| [`INDEX-1.32-capture.md`](INDEX-1.32-capture.md) | 总索引：功能 ↔ 函数地址 ↔ 常量；含与本文档的**差异复核点**与未决项 |
+| [`1.32-brush-heights.md`](1.32-brush-heights.md) | 高度刷：升高/降低/整平/噪化/平滑 + 坡度后处理与 flood fill |
+| [`1.32-brush-water-texture-cliff.md`](1.32-brush-water-texture-cliff.md) | 水 / 纹理 / 枯萎 / 边界 / 斜坡 / 悬崖 |
+| [`1.32-map-stitching.md`](1.32-map-stitching.md) | 地图拼接：分块(4×4 tiles)、高度拼接、纹理接缝打包、悬崖面、水面 |
+| [`1.32-dynamic-capture.md`](1.32-dynamic-capture.md) | 捕获方法与内存布局（加密 `.text` → 运行时解密） |
+| `undead03_meta.json` + `img/` | 官方复杂地图 Undead03 的解码统计与可视化 |

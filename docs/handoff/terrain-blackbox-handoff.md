@@ -77,3 +77,5 @@
 - `handoff`（https://github.com/awangs1986/catskills/tree/main/skills/productivity/handoff，只读）
 - rea（https://github.com/morluto/rea）+ Ghidra headless：1.27 静态分析
 - 教学式文档：原理 → 推导 → 数据 → 改法；每条结论标验证范围
+
+> **更新（2026-10-16）**：1.32.10.18820 已由 `docs/terrain-reference/INDEX-1.32-capture.md` 起的 1.32 系列文档**动态捕获并反编译验证**（不再只是黑盒存档对照）。原「1.32 仅黑盒」的限制对**算法常量与内存布局**已解除；尚未动态验证的项见该索引文末「未决项 U1–U7」。
