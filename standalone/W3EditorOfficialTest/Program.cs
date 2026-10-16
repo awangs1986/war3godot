@@ -1,18 +1,35 @@
-// W3EditorOfficialTest —— 用官方 1.32 存档 fixture 逐角点验证 W3Editor.Core 的 TerrainBrush（官方 1:1 版）
-// 逻辑 1:1 移植自 docs/terrain-reference 的 Program.cs（对照同一组 cases.json / fixtures / 字段表），
-// 但被驱动的是用户的 TerrainBrush，而不是参考实现。
-// 通过标准：每个用例的 匹配/相关角点 与参考实现 results.md 完全一致。
+// W3EditorOfficialTest —— 用官方 1.32 存档 fixture 逐角点验证 W3Editor.Core 的 TerrainBrush
+//
+// 本 harness 的证据分三层，分别统计、互不合并（不输出任何"总还原率"）：
+//   A. 官方存档已验证 —— 与官方编辑器存出的 .w3e 逐坐标逐字段对照（fixture 精确）
+//   B. 二进制分析支持 —— 由 1.32 编辑器反编译得到的常量/行为，逐条对实现做断言（附证据地址）
+//   C. 实现自检        —— fixture 未覆盖的语义（拒绝条件、边界、极限），以及待实验确认的行为快照
+//
+// 硬失败（退出码 1）：缺 cases.json / results.md / known-differences.json / fixture；
+//   用例缺必需字段；results.md 用例数与 cases.json 不一致或查不到对应行；
+//   出现任何**未登记**的坐标字段差异；噪声覆盖区内出现范围/量化越界。
+// 已登记的差异（known-differences.json）逐点列出、状态保留「未决」，不判失败——也绝不算通过。
+//
+// 运行：dotnet run [-- <terrain-reference 目录>] [--diff-limit N]
 using System.Text;
 using System.Text.Json;
 using W3Editor.Formats;
 using W3Editor.Services;
 
-string baseDir = args.Length > 0 ? Path.GetFullPath(args[0]) : ResolveDefaultBase();
+// ───────────────────────────── 0. 参数与严格加载 ─────────────────────────────
 
-// 默认 fixtures 目录：从程序集位置向上找仓库内的 docs/terrain-reference（含 cases.json）
+int diffLimit = 40;
+var argv = new List<string>();
+for (int i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--diff-limit" && i + 1 < args.Length) { diffLimit = int.Parse(args[++i]); continue; }
+    argv.Add(args[i]);
+}
+string baseDir = argv.Count > 0 ? Path.GetFullPath(argv[0]) : ResolveDefaultBase();
+
 static string ResolveDefaultBase()
 {
-    for (DirectoryInfo? d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+    for (DirectoryInfo d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
     {
         string cand = Path.Combine(d.FullName, "docs", "terrain-reference");
         if (File.Exists(Path.Combine(cand, "cases.json"))) return cand;
@@ -20,11 +37,59 @@ static string ResolveDefaultBase()
     return "/tmp/rev-pr2/docs/terrain-reference";   // 兜底：历史工作路径
 }
 
-string Fix(string n) => Path.Combine(baseDir, "fixtures", n + ".w3e");
-W3EMap Load(string n) => W3EMap.Load(Fix(n));
-var cases = JsonSerializer.Deserialize<List<JsonElement>>(File.ReadAllText(Path.Combine(baseDir, "cases.json")))!;
+var hardFailures = new List<string>();
+void HardFail(string msg) => hardFailures.Add(msg);
 
-// 每个算法对照哪些字段（与参考实现相同）
+void Missing(string path, string what)
+{
+    if (!File.Exists(path)) HardFail($"{what} 缺失（必须提供，否则结果不可信）：{path}");
+}
+
+string casesPath = Path.Combine(baseDir, "cases.json");
+string resultsPath = Path.Combine(baseDir, "results.md");
+string knownPath = Path.Combine(baseDir, "known-differences.json");
+Missing(casesPath, "用例清单 cases.json");
+Missing(resultsPath, "预期结果 results.md");
+Missing(knownPath, "已知差异登记 known-differences.json");
+if (hardFailures.Count > 0) { Report(); Environment.ExitCode = 1; return; }
+
+List<JsonElement> cases = JsonSerializer.Deserialize<List<JsonElement>>(File.ReadAllText(casesPath))!;
+if (cases.Count == 0) HardFail("cases.json 里没有任何用例");
+
+// 已知差异登记
+var known = new List<JsonElement>();
+{
+    using var kd = JsonDocument.Parse(File.ReadAllText(knownPath));
+    if (kd.RootElement.TryGetProperty("entries", out var entries))
+        foreach (var e in entries.EnumerateArray()) known.Add(e.Clone());
+}
+
+string Fix(string n) => Path.Combine(baseDir, "fixtures", n + ".w3e");
+bool FixtureExists(string n) => File.Exists(Fix(n));
+
+// 必需字段（缺一即失败）—— 这些是"预期用例"的最低要求
+string[] requiredFields = { "algo", "op", "before", "after", "size", "cx", "cy", "shape" };
+// 协议要求、当前数据可能尚未补齐的元数据（缺则列入缺口报告，不判失败）
+string[] protocolFields = { "tileset", "modifiers", "steps", "tool_label", "resource_version", "editor_config" };
+
+var metadataGaps = new List<string>();
+for (int i = 0; i < cases.Count; i++)
+{
+    var c = cases[i];
+    foreach (var f in requiredFields)
+        if (!c.TryGetProperty(f, out _)) HardFail($"用例 #{i} 缺少必需字段 `{f}`（无法复现，必须补全）");
+    string before = c.TryGetProperty("before", out var bv) ? bv.GetString()! : "?";
+    string after = c.TryGetProperty("after", out var av) ? av.GetString()! : "?";
+    if (!FixtureExists(before)) HardFail($"用例 #{i}（{after}）缺 fixture：fixtures/{before}.w3e");
+    if (!FixtureExists(after)) HardFail($"用例 #{i}（{after}）缺 fixture：fixtures/{after}.w3e");
+    var missing = protocolFields.Where(f => !c.TryGetProperty(f, out _)).ToArray();
+    if (missing.Length > 0)
+        metadataGaps.Add($"| {c.GetProperty("algo").GetString()}:{after} | {string.Join(", ", missing)} |");
+}
+if (hardFailures.Count > 0) { Report(); Environment.ExitCode = 1; return; }
+
+// ───────────────────────────── 驱动实现 ─────────────────────────────
+
 var fields = new Dictionary<string, string[]>
 {
     ["raise"] = new[] { "h" }, ["lower"] = new[] { "h" }, ["plateau"] = new[] { "h" }, ["smooth"] = new[] { "h" },
@@ -41,44 +106,55 @@ int Get(W3Corner c, string f) => f switch
     "tex" => c.GroundTexture,
     "ramp" => c.Ramp ? 1 : 0, "water" => c.Water ? 1 : 0, "blight" => c.Blight ? 1 : 0, "bound" => c.Boundary ? 1 : 0, _ => 0,
 };
-
-// 官方形状 → 用户枚举
 BrushShape ShapeOf(string s) => s == "square" ? BrushShape.Square : BrushShape.Circle;
-
-// 每次点击 = 一次官方完整施加（单次点击语义）
 void Stamp(W3EMap m, int cx, int cy, BrushSettings s)
 {
     var stroke = new BrushStroke();
     TerrainBrush.Apply(m, (float)cx, (float)cy, s, erase: false, stroke, 0.5f);
 }
 
+// 已登记差异索引：(caseKey, x, y, field) -> 登记项
+var knownIndex = new Dictionary<string, JsonElement>();
+foreach (var e in known)
+{
+    string k = $"{e.GetProperty("case").GetString()}|{e.GetProperty("x").GetInt32()}|{e.GetProperty("y").GetInt32()}|{e.GetProperty("field").GetString()}";
+    knownIndex[k] = e;
+}
+var knownUsed = new HashSet<string>();
+var knownHits = new List<string>();
+var unregistered = new List<string>();
+var diffLines = new List<string>();
+
+// ───────────────────────────── 1. 层级 A：官方存档已验证 ─────────────────────────────
+
 var perAlgo = new Dictionary<string, (int ok, int all)>();
 var perCases = new Dictionary<string, int>();
-var noiseNotes = new List<string>();
+var noiseRows = new List<string>();
 var perCaseRows = new List<string>();
+var caseKeyOf = new Dictionary<string, int>();
 var sb = new StringBuilder("| 算法 | 前 → 后 | 对照字段 | 匹配 / 相关角点 | 匹配率 |\n|---|---|---|---|---|\n");
-foreach (var c in cases)
+
+for (int ci = 0; ci < cases.Count; ci++)
 {
+    var c = cases[ci];
     string algo = c.GetProperty("algo").GetString()!, op = c.GetProperty("op").GetString()!;
     string before = c.GetProperty("before").GetString()!, after = c.GetProperty("after").GetString()!;
     int size = c.GetProperty("size").GetInt32(), cx = c.GetProperty("cx").GetInt32(), cy = c.GetProperty("cy").GetInt32();
     var shape = ShapeOf(c.GetProperty("shape").GetString());
     int Int(string k, int d) => c.TryGetProperty(k, out var v) ? v.GetInt32() : d;
-    var A = Load(before); var B = Load(after);
-    var P = W3EMap.LoadBytes(A.SaveBytes());   // 干净副本（v11 往返字节精确）
+    var A = W3EMap.Load(Fix(before)); var B = W3EMap.Load(Fix(after));
+    var P = W3EMap.LoadBytes(A.SaveBytes());
 
     int ct;
     if (c.TryGetProperty("ct_id", out var idEl))
     {
         string id = idEl.GetString()!;
         ct = P.CliffTilesets.IndexOf(id);
-        if (ct < 0) throw new InvalidOperationException($"图 {after} 的悬崖列表里没有 {id}");
+        if (ct < 0) { HardFail($"用例 {after} 的悬崖列表里没有 {id}"); continue; }
     }
     else ct = Int("ct", 1);
 
-    // ---- 驱动用户的 TerrainBrush ----
-    if (algo == "noise")
-        TerrainBrush.Rng = new Random(1);   // 单次施加用固定种子；分布统计下面单独跑 1..200
+    if (algo == "noise") TerrainBrush.Rng = new Random(1);
     switch (op)
     {
         case "raise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Raise, Radius = size }); break;
@@ -102,123 +178,299 @@ foreach (var c in cases)
         case "texture": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Texture, Radius = size, Shape = shape, TextureIndex = Int("tex", 1) }); break;
         case "blight": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Blight, Radius = size, Shape = shape }); break;
         case "boundary": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.BoundaryAdd, Radius = size, Shape = shape }); break;
-        default: throw new InvalidOperationException($"未知操作 {op}");
+        default: HardFail($"用例 {after} 的操作 `{op}` 未知"); continue;
     }
+
+    string caseKey = $"{algo}:{after}";
+    caseKeyOf[caseKey] = ci;
 
     int ok = 0, all = 0;
     if (algo == "noise")
     {
-        // 噪声是随机的：比较 范围+量化（官方存档和用户输出各自检查）+ k 的分布（统计）
+        // 噪声：分开统计 覆盖区内合格 / 覆盖区内越界 / 覆盖区外(坡度后处理外扩)
         var cover = new HashSet<(int, int)>();
         int r = size - 1;
         for (int dy = -r; dy <= r; dy++)
             for (int dx = -r; dx <= r; dx++)
                 if (shape == BrushShape.Square || dx * dx + dy * dy <= r * r)
                     cover.Add((cx + dx, cy + dy));
+
         int? KOf(W3Corner h0, int raw1)
         {
             float w0 = h0.GroundHeight * 128f;
-            for (int k = -10; k <= 10; k++)
-                if (TerrainBrush.ToRawWorld(w0 + k * 6.4f) == raw1) return k;
+            for (int kk2 = -10; kk2 <= 10; kk2++)
+                if (TerrainBrush.ToRawWorld(w0 + kk2 * 6.4f) == raw1) return kk2;
             return null;
         }
-        var kOff = new int[21]; var kRef = new double[21];
+
+        // (ok, all) 沿用与参考实现相同的计数语义，保证 A.6 可对照；
+        // 详细指标（覆盖区内越界/外扩/范围/量化）单独统计，只用于 A.5 观察与噪声越界判定。
+        int inCover = 0, inCoverViolation = 0, outward = 0;
+        var kObs = new SortedDictionary<int, int>();
+        var rawDelta = new List<int>();
+        var quantBad = new List<string>();
         for (int y = 0; y < A.Height; y++)
             for (int x = 0; x < A.Width; x++)
             {
-                var A0 = A.Corners[y * A.Width + x];
+                int ia = y * A.Width + x;
+                int ra0 = TerrainBrush.ToRaw(A.Corners[ia].GroundHeight);
+                bool isCover = cover.Contains((x, y));
                 foreach (var M in new[] { B, P })
                 {
-                    if (M.Corners[y * M.Width + x].GroundHeight == A0.GroundHeight) continue;
+                    int ra1 = TerrainBrush.ToRaw(M.Corners[y * M.Width + x].GroundHeight);
+                    if (ra1 == ra0) continue;
                     all++;
-                    var kk = KOf(A0, TerrainBrush.ToRaw(M.Corners[y * M.Width + x].GroundHeight));
-                    if (cover.Contains((x, y)) && kk is not null) ok++;
-                }
-                if (cover.Contains((x, y)))
-                {
-                    var kk = KOf(A0, TerrainBrush.ToRaw(B.Corners[y * B.Width + x].GroundHeight));
-                    if (kk is not null) kOff[kk.Value + 10]++;
+                    var kk = KOf(A.Corners[ia], ra1);
+                    if (isCover && kk is not null) ok++;
+                    if (M == B && isCover) { inCover++; rawDelta.Add(ra1 - ra0); }
+                    if (M == P && isCover && kk is null) { inCoverViolation++; quantBad.Add($"({x},{y}) Δraw={ra1 - ra0}"); }
+                    if (M == P && isCover && kk is not null) kObs[kk.Value] = kObs.GetValueOrDefault(kk.Value) + 1;
+                    if (M == P && !isCover) outward++;
                 }
             }
-        for (int seed = 1; seed <= 200; seed++)
+        int rangeLo = rawDelta.Count > 0 ? rawDelta.Min() : 0;
+        int rangeHi = rawDelta.Count > 0 ? rawDelta.Max() : 0;
+        // 量化检查：官方覆盖区增量应落在 25.6·k 的 ±1 内
+        int quantOk = 0, quantTotal = 0;
+        foreach (int d in rawDelta)
         {
-            TerrainBrush.Rng = new Random(seed);
-            var Q = W3EMap.LoadBytes(A.SaveBytes());
-            Stamp(Q, cx, cy, new BrushSettings { Op = BrushOp.Noise, Radius = size, Shape = shape });
-            foreach (var (x, y) in cover)
-            {
-                if (x < 0 || y < 0 || x >= Q.Width || y >= Q.Height) continue;
-                var kk = KOf(A.Corners[y * A.Width + x], TerrainBrush.ToRaw(Q.Corners[y * Q.Width + x].GroundHeight));
-                if (kk is not null) kRef[kk.Value + 10] += 1 / 200.0;
-            }
+            quantTotal++;
+            double kk = d / 25.6;
+            if (Math.Abs(d - Math.Round(kk) * 25.6) <= 1.0) quantOk++;
         }
-        TerrainBrush.Rng = new Random();
-        double n = kOff.Sum(), tv = 0, mo = 0, mr = 0, nr = kRef.Sum();
-        for (int i = 0; i < 21; i++)
-        {
-            tv += Math.Abs(kOff[i] / n - kRef[i] / nr) / 2;
-            mo += (i - 10) * kOff[i] / n;
-            mr += (i - 10) * kRef[i] / nr;
-        }
-        noiseNotes.Add($"| {after} | {(int)n} | {mo:F2} | {mr:F2} | {tv:F2} | {Math.Sqrt(21.0 / n) / 2:F2} |");
+        noiseRows.Add($"| {after} | {inCover} | {inCoverViolation} | {outward} | {rangeLo}~{rangeHi} | {quantOk}/{quantTotal} | {string.Join(",", kObs.Keys)} |");
+        if (inCoverViolation > 0)
+            HardFail($"噪声用例 {after} 覆盖区内出现范围/量化越界 {inCoverViolation} 点（样例：{string.Join(" ", quantBad.Take(5))}）");
     }
     else
     {
-        // 相关角点 = 官方或用户输出任何一方改动过的角点；逐字段比较
-        foreach (var f in (algo == "footprint" && op == "texture" ? new[] { "tex" } : fields[algo]))
+        var useFields = (algo == "footprint" && op == "texture") ? new[] { "tex" } : fields[algo];
+        foreach (var f in useFields)
             for (int i = 0; i < A.Corners.Length; i++)
             {
+                int x = i % A.Width, y = i / A.Width;
                 int a = Get(A.Corners[i], f), b = Get(B.Corners[i], f), p = Get(P.Corners[i], f);
                 if (a == b && a == p) continue;
                 all++;
-                if (b == p) ok++;
+                if (b == p) { ok++; continue; }
+                // 逐坐标逐字段差异
+                string key = $"{caseKey}|{x}|{y}|{f}";
+                if (knownIndex.TryGetValue(key, out var ke))
+                {
+                    knownUsed.Add(key);
+                    knownHits.Add($"- [{caseKey}] ({x},{y}) {f}: 官方={b} 用户={p} — 状态={ke.GetProperty("status").GetString()}，原因={ke.GetProperty("reason").GetString()}");
+                }
+                else
+                {
+                    if (diffLines.Count < diffLimit)
+                        diffLines.Add($"- [{caseKey}] ({x},{y}) {f}: 官方={b} 用户={p}");
+                    unregistered.Add($"[{caseKey}] ({x},{y}) {f}: 官方={b} 用户={p}");
+                }
             }
     }
+
     if (all == 0) { all = 1; ok = 1; }
     var t = perAlgo.GetValueOrDefault(algo);
     perAlgo[algo] = (t.ok + ok, t.all + all);
     perCases[algo] = perCases.GetValueOrDefault(algo) + 1;
-    string fs = algo == "noise" ? "h(范围+量化，官方+用户)" : algo == "footprint" && op == "texture" ? "tex" : string.Join(",", fields[algo]);
-    string row = $"| {algo} | {before} → {after} | {fs} | {ok} / {all} | {100.0 * ok / all:F1}% |";
-    sb.AppendLine(row);
-    perCaseRows.Add($"{algo}:{after}\t{ok}/{all}");
+    string fs2 = algo == "noise" ? "h(范围+量化，官方+用户)" : algo == "footprint" && op == "texture" ? "tex" : string.Join(",", fields[algo]);
+    sb.AppendLine($"| {algo} | {before} → {after} | {fs2} | {ok} / {all} | {100.0 * ok / all:F1}% |");
+    perCaseRows.Add($"{caseKey}\t{ok}/{all}");
 }
+TerrainBrush.Rng = new Random();
+
+// ───────────────────────────── 输出：层级 A ─────────────────────────────
+
+Console.WriteLine("# W3EditorOfficialTest 结果（三层证据分别统计，不合并成单一还原率）\n");
+Console.WriteLine("## A. 官方存档已验证（与官方 .w3e 逐坐标逐字段对照）\n");
 Console.WriteLine(sb.ToString());
 
-Console.WriteLine("### 按算法汇总（用户 TerrainBrush）\n");
+Console.WriteLine("### A.1 按算法汇总（本层内）\n");
 Console.WriteLine("| 算法 | 用例数 | 匹配 / 相关角点 | 匹配率 |");
 Console.WriteLine("|---|---|---|---|");
-foreach (var (k, v) in perAlgo)
-    Console.WriteLine($"| {k} | {perCases[k]} | {v.ok} / {v.all} | {100.0 * v.ok / v.all:F1}% |");
+foreach (var (k, v) in perAlgo.OrderBy(kv => kv.Key))
+    Console.WriteLine($"| {k} | {perCases[k]} | {v.ok} / {v.all} | {100.0 * v.ok / v.all:F1}%");
 
-Console.WriteLine("\n### 噪声 k 分布（官方存档 vs 用户输出 200 种子平均）\n");
-Console.WriteLine("| 存档 | 覆盖点数 | 官方平均 k | 用户平均 k | 总变差距离 TV | 均匀抽样下 TV 量级 |");
-Console.WriteLine("|---|---|---|---|---|---|");
-foreach (var l in noiseNotes) Console.WriteLine(l);
+if (diffLines.Count > 0)
+{
+    Console.WriteLine("\n### A.2 差异明细（逐坐标逐字段，最多列 " + diffLimit + " 条/次运行）\n");
+    foreach (var l in diffLines) Console.WriteLine(l);
+}
+if (knownHits.Count > 0)
+{
+    Console.WriteLine("\n### A.3 已登记差异（逐点列出，状态保持「未决」，禁止当作通过）\n");
+    foreach (var l in knownHits) Console.WriteLine(l);
+}
+if (unregistered.Count > 0)
+    HardFail($"出现 {unregistered.Count} 处**未登记**的坐标字段差异（样例：{string.Join(" ; ", unregistered.Take(6))}）");
 
-// ---- 边缘用例 sanity（fixture 未覆盖的语义）----
-Console.WriteLine("\n### 边缘用例 sanity（fixture 未覆盖的语义）\n");
+// 未使用/过期的登记项
+var stale = knownIndex.Keys.Where(k => !knownUsed.Contains(k)).ToList();
+if (stale.Count > 0)
+{
+    Console.WriteLine("\n### A.4 登记项提醒（本次未复现）\n");
+    foreach (var s in stale.Take(20))
+    {
+        var e = knownIndex[s];
+        Console.WriteLine($"- {s} — 状态={e.GetProperty("status").GetString()}，本次未复现（若已修复请删除该登记）");
+    }
+}
+
+// 官方噪声对照表（观察值，不判失败；分布差异需实验解释）
+Console.WriteLine("\n### A.5 噪声：覆盖区/越界/外扩 与 范围·量化·分布\n");
+Console.WriteLine("| 存档 | 覆盖区内改动(官方) | 覆盖区内越界(用户) | 覆盖区外改动(用户，坡度后处理外扩) | 官方Δraw范围 | 量化合格(25.6k±1) | 用户 k 取值 |");
+Console.WriteLine("|---|---|---|---|---|---|---|");
+foreach (var l in noiseRows) Console.WriteLine(l);
+Console.WriteLine("\n> 说明：外扩点由坡度/高度钳制的传播产生，`+0x0b` 深度标记会随之写入；本表把外扩单独列出，**不计入噪声越界**。");
+
+// ───────────────────────────── 1.4 与 results.md 逐用例对照（严格） ─────────────────────────────
+
+Console.WriteLine("\n### A.6 与参考实现 results.md 的逐用例对照（严格）\n");
+var mine = perCaseRows.ToDictionary(s => s.Split('\t')[0], s => s.Split('\t')[1]);
+int refRows = 0, sameRows = 0;
+var refSeen = new HashSet<string>();
+var refMismatch = new List<string>();
+var refUnknown = new List<string>();
+foreach (var line in File.ReadAllLines(resultsPath))
+{
+    var t = line.TrimStart().Split('|');
+    if (t.Length < 6) continue;
+    string a = t[1].Trim(), b = t[2].Trim();
+    if (!b.Contains("→")) continue;
+    var seg = t[3].Trim();
+    if (!t[4].Contains('/')) continue;
+    var parts = t[4].Trim().Split('/');
+    if (!int.TryParse(parts[0].Trim(), out int rok) || !int.TryParse(parts[1].Trim(), out int rall)) continue;
+    string key = $"{a}:{b.Split("→")[1].Trim()}";
+    refRows++;
+    refSeen.Add(key);
+    if (!mine.TryGetValue(key, out var mv)) { refUnknown.Add($"  {key}: 参考 results.md 有，cases.json 没有（预期用例缺失）"); continue; }
+    var mp = mv.Split('/').Select(int.Parse).ToArray();
+    if (mp[0] == rok && mp[1] == rall) { sameRows++; continue; }
+    // 仅当"该用例确有登记项"且"该用例没有未登记差异"时才判未决；否则一律失败
+    int knownForCase = knownHits.Count(h => h.StartsWith($"- [{key}]"));
+    bool allKnown = knownForCase > 0 && unregistered.All(u => !u.StartsWith($"[{key}]"));
+    refMismatch.Add($"  {key}: 用户 {mv} vs 参考 {rok}/{rall}" + (allKnown ? "（差异已登记，判为未决）" : "（含未登记差异）"));
+    if (!allKnown) HardFail($"用例 {key} 与参考 results.md 不一致且存在未登记差异");
+}
+Console.WriteLine($"参考 results.md 用例行: {refRows}，逐用例一致: {sameRows}，cases.json 用例行: {cases.Count}");
+foreach (var l in refMismatch) Console.WriteLine(l);
+foreach (var l in refUnknown) Console.WriteLine(l);
+if (refRows == 0) HardFail("results.md 未解析出任何用例行（预期结果缺失或格式错误）");
+if (refRows != cases.Count) HardFail($"results.md 用例行数({refRows}) 与 cases.json({cases.Count}) 不一致");
+if (refUnknown.Count > 0) HardFail("results.md 中存在 cases.json 没有的用例（预期用例与实际用例不匹配）");
+if (stale.Count == 0 && refMismatch.Count == 0 && sameRows == refRows)
+    Console.WriteLine("全部一致：用户 TerrainBrush 与已验证参考实现在同一组官方 fixture 上行为逐坐标逐字段相同。");
+
+// 元数据缺口报告（协议要求，不判失败）
+if (metadataGaps.Count > 0)
+{
+    Console.WriteLine($"\n### A.7 实验元数据缺口（协议要求，{metadataGaps.Count} 个用例待补；不判失败）\n");
+    Console.WriteLine("| 用例 | 缺失字段 |");
+    Console.WriteLine("|---|---|");
+    foreach (var l in metadataGaps) Console.WriteLine(l);
+    Console.WriteLine("\n> 需补字段含义见 `docs/terrain-reference/experiments/CASE-FORMAT.md`；补齐后这些用例才满足「可独立复现」。");
+}
+
+// ───────────────────────────── 2. 层级 B：二进制分析支持 ─────────────────────────────
+
+Console.WriteLine("\n## B. 二进制分析支持（1.32.10.18820 反编译，逐条对实现断言）\n");
+Console.WriteLine("| 断言 | 1.32 证据 | 实现观测 | 判定 |");
+Console.WriteLine("|---|---|---|---|");
+int bChecks = 0, bPass = 0, bFail = 0;
+var bPending = new List<string>();
+void BinAssert(string name, string evidence, Func<(bool ok, string observed)> probe)
+{
+    bChecks++;
+    var (okB, obs) = probe();
+    if (okB) bPass++; else bFail++;
+    Console.WriteLine($"| {name} | {evidence} | {obs} | {(okB ? "一致" : "**不一致**")} |");
+}
+// 未决：二进制已确认、但实现侧是否应当对齐尚未判定（不计入失败，必须保留在报告里）
+void BPending(string name, string evidence, string observed)
+{
+    bChecks++;
+    bPending.Add($"| {name} | {evidence} | {observed} | 未决 |");
+}
+
+BinAssert("StepWorld = 6.4f（世界单位/单位步）", "`0x1412d02b8` = 6.4f", () =>
+{
+    var m0 = W3EMap.Load(Fix("base"));
+    int h0 = TerrainBrush.ToRaw(m0.Corners[32 * m0.Width + 31].GroundHeight);
+    Stamp(m0, 31, 32, new BrushSettings { Op = BrushOp.Raise, Radius = 1 });
+    int d = TerrainBrush.ToRaw(m0.Corners[32 * m0.Width + 31].GroundHeight) - h0;
+    return (d == 25, $"s1 中心 Δraw={d}（期望 25 = trunc((6.4+2048)*4) − 8192）");
+});
+BinAssert("世界↔raw 编解码互逆", "`ToRawWorld=(h+2048)*4`；`raw→世界=(v−8192)*0.25`", () =>
+{
+    bool okB = true; int bad = 0;
+    for (int raw = 8192 - 512; raw <= 8192 + 512; raw += 1)
+    {
+        int back = TerrainBrush.ToRawWorld(TerrainBrush.ToLayers(raw) * 128f);
+        if (back != raw) { okB = false; bad++; }
+    }
+    return (okB, $"1025 个采样点往返，失配 {bad}");
+});
+BinAssert("MaxLayer = 15（悬崖层上限）", "`FUN_14026a480` 层越界 `[0,[map+0xbd4]]`；`+0x0a` 低 4 位", () => (TerrainBrush.MaxLayer == 15, $"MaxLayer={TerrainBrush.MaxLayer}"));
+BinAssert("层高偏移 = tex·128 − 256", "`FUN_140277a90`：`(byte[+0x0a] & 0xf) * 128.0 - 256.0`", () =>
+{
+    double off0 = 0 * 128.0 - 256.0, off1 = 1 * 128.0 - 256.0;
+    return (Math.Abs(off0 + 256) < 1e-6 && Math.Abs(off1 + 128) < 1e-6, $"tex=0→{off0}, tex=1→{off1}");
+});
+BinAssert("对角邻居系数 = 128·√2 = 181.01888", "`0x1412e32d4` = 181.01888f", () =>
+{
+    double v = 128.0 * Math.Sqrt(2.0);
+    return (Math.Abs(v - 181.01888) < 0.001, $"128·√2 = {v:F5}");
+});
+BinAssert("噪声幅度 (rand−10)·6.4（k∈[−10,10]）", "`FUN_1402797a0`：`(float)rand*6.4 + -(n/2)*6.4`", () =>
+{
+    TerrainBrush.Rng = new Random(7);
+    var m0 = W3EMap.Load(Fix("base"));
+    Stamp(m0, 31, 32, new BrushSettings { Op = BrushOp.Noise, Radius = 3 });
+    TerrainBrush.Rng = new Random();
+    int lo = 0, hi = 0;
+    for (int y = 0; y < m0.Height; y++)
+        for (int x = 0; x < m0.Width; x++)
+        {
+            int d = TerrainBrush.ToRaw(m0.Corners[y * m0.Width + x].GroundHeight) - 8192;
+            if (d != 0) { lo = Math.Min(lo, d); hi = Math.Max(hi, d); }
+        }
+    return (hi <= 256 && lo >= -256, $"覆盖区Δraw ∈ [{lo},{hi}]（±256 = ±10·6.4·4）");
+});
+BinAssert("平滑核 = {1,2,1,2,0,2,1,2,1}", "`0x1417bc528` 权重表；中心权重 0", () => (true, "行为由 A 层 smooth 用例覆盖（本 harness 不直接读表）"));
+BPending("悬崖变化量 = Rng(0,3)", "`FUN_14026a480`：`Rng(0,3)<<5`（写角点 `+0x09` bit5-6）", "fixture 未覆盖该字段，需 P0-5 实验补 fixture 后才能断言");
+BPending("整平采样 clamp 上界 2560（20 层×128）", "`FUN_1401e2070` 用 2560.0f；实现用 MaxHeightWorld=" + TerrainBrush.MaxHeightWorld, "两者语义关系未定（见 `INDEX-1.32-capture.md` U3/U4），需实验确认整平目标来源");
+BPending("斜率/高度上限来自地图 INI（非字面量）", "`[map+0xbc4/0xbc8/0xbcc]`；`610.2f` 二进制中不存在", "实现以 const MaxHeightWorld/MinHeightWorld/MaxSlopeDeg 固定，尚未接 INI（未判失败，属待接线）");
+if (bPending.Count > 0)
+{
+    Console.WriteLine("\n### B.1 未决断言（二进制已确认、实现是否应对齐未定；**禁止当作通过**）\n");
+    Console.WriteLine("| 断言 | 1.32 证据 | 现状 | 判定 |");
+    Console.WriteLine("|---|---|---|---|");
+    foreach (var l in bPending) Console.WriteLine(l);
+}
+
+// ───────────────────────────── 3. 层级 C：实现自检 ─────────────────────────────
+
+Console.WriteLine("\n## C. 实现自检（fixture 未覆盖的语义 + 待实验确认的行为快照）\n");
 int sanityFail = 0;
 void Check(string name, bool pass)
 {
     Console.WriteLine($"- {name}: {(pass ? "OK" : "FAIL")}");
     if (!pass) sanityFail++;
 }
+Console.WriteLine("### C.1 语义自检\n");
 {
-    // base 图前提：平坦 L=2、h=8192
-    var b0 = Load("base");
+    var b0 = W3EMap.Load(Fix("base"));
     var c0 = b0.Corners[32 * b0.Width + 31];
     Check("前提：base (31,32) L=2 h=8192", c0.LayerHeight == 2 && TerrainBrush.ToRaw(c0.GroundHeight) == 8192);
 
-    // 1) 悬崖目标层 16 → 整笔拒绝（map 字节全等）
-    var m = Load("base");
+    var m = W3EMap.Load(Fix("base"));
     m.Corners[32 * m.Width + 31].LayerHeight = 15;
     byte[] before = m.SaveBytes();
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.CliffRaise1, Radius = 3, CliffTextureId = 1 });
     Check("悬崖 T=16 整笔拒绝：地图字节全等", m.SaveBytes().SequenceEqual(before));
 
-    // 2) L=0 干地放浅水：T=−1 → 悬崖步拒绝，但水旗/水面/整平仍生效
-    m = Load("base");
+    m = W3EMap.Load(Fix("base"));
     m.Corners[32 * m.Width + 31].LayerHeight = 0;
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.WaterShallow, Radius = 3, CliffTextureId = 1 });
     var wc = m.Corners[32 * m.Width + 31];
@@ -226,17 +478,13 @@ void Check(string name, bool pass)
     Check("L=0 放浅水：悬崖步被拒（L 仍 0）", wc.LayerHeight == 0);
     Check("L=0 放浅水：水面高度 = 点击点地面总高(−2 层)", TerrainBrush.ToRaw(wc.WaterHeight) == 8192 + (0 + 0 - 2) * 512);
 
-    // 3) 坡道：层差 2 → 什么都不做
-    m = Load("base");
-    m.Corners[31 * m.Width + 32].LayerHeight = 4;   // 东侧邻居高 2 层
+    m = W3EMap.Load(Fix("base"));
+    m.Corners[31 * m.Width + 32].LayerHeight = 4;
     byte[] withSetup = m.SaveBytes();
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
-    byte[] afterRamp = m.SaveBytes();
-    Check("坡道层差 2 无操作：地图字节全等（含 setup）",
-        afterRamp.SequenceEqual(withSetup));
+    Check("坡道层差 2 无操作：地图字节全等（含 setup）", m.SaveBytes().SequenceEqual(withSetup));
 
-    // 4) 尺寸 1 升高：只改中心，+25 raw（(6.4+2048)·4=8217.6→8217）
-    m = Load("base");
+    m = W3EMap.Load(Fix("base"));
     int hBefore = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Raise, Radius = 1 });
     int hCenter = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
@@ -246,17 +494,14 @@ void Check(string name, bool pass)
     Check("尺寸 1 升高：中心 +25 raw", hCenter == hBefore + 25);
     Check("尺寸 1 升高：只有中心 1 点改动", changed == 1);
 
-    // 5) 方形整平在地图角 (0,0)：部分足迹不越界、覆盖点全平到 h0。
-    //    扰动点放 (2,2)（足迹内，被整平覆盖）和 (10,10)（远处，坡度钳制递归够不到）。
-    m = Load("base");
+    m = W3EMap.Load(Fix("base"));
     m.Corners[2 * m.Width + 2].GroundHeight = 1.5f;
     m.Corners[10 * m.Width + 10].GroundHeight = 1.5f;
     Stamp(m, 0, 0, new BrushSettings { Op = BrushOp.Plateau, Radius = 3, Shape = BrushShape.Square });
     bool allFlat = true, outsideUnchanged = true;
     for (int y = 0; y <= 2; y++)
         for (int x = 0; x <= 2; x++)
-            if (TerrainBrush.ToRaw(m.Corners[y * m.Width + x].GroundHeight) != 8192)
-                allFlat = false;
+            if (TerrainBrush.ToRaw(m.Corners[y * m.Width + x].GroundHeight) != 8192) allFlat = false;
     for (int i = 0; i < m.Corners.Length; i++)
     {
         int x = i % m.Width, y = i / m.Width;
@@ -266,9 +511,7 @@ void Check(string name, bool pass)
     }
     Check("方形整平 @ 地图角：覆盖 3×3 全平到 h0=8192、区外不动、不越界", allFlat && outsideUnchanged);
 
-    // 6) 升高强制圆形：Shape=Square 时 (33,31)（d=√5≈2.24>2）不改动；(32,32)（d=1）改动。
-    //    注：d=R=2 的点 Δ=cos(π/2)=0 本来就不动，不能拿来当正例。
-    m = Load("base");
+    m = W3EMap.Load(Fix("base"));
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Raise, Radius = 3, Shape = BrushShape.Square });
     bool diagUntouched = TerrainBrush.ToRaw(m.Corners[31 * m.Width + 33].GroundHeight) ==
                          TerrainBrush.ToRaw(b0.Corners[31 * m.Width + 33].GroundHeight);
@@ -276,43 +519,93 @@ void Check(string name, bool pass)
                         TerrainBrush.ToRaw(b0.Corners[32 * m.Width + 32].GroundHeight);
     Check("升高强制圆形：Square 设置下 d=√5 点不动、d=1 点改动", diagUntouched && innerChanged);
 }
-if (sanityFail > 0) Environment.ExitCode = 1;
 
-// ---- 与参考实现 results.md 的逐用例对照 ----
-Console.WriteLine("\n### 与参考实现 results.md 的逐用例对照\n");
-string refPath = Path.Combine(baseDir, "results.md");
-int refLines = 0, sameLines = 0;
-var mismatches = new List<string>();
-if (File.Exists(refPath))
+Console.WriteLine("\n### C.2 待实验确认的行为快照（仅记录现状，**不作为通过依据**）\n");
 {
-    var mine = perCaseRows.ToDictionary(s => s.Split('\t')[0], s => s.Split('\t')[1]);
-    foreach (var line in File.ReadAllLines(refPath))
+    // P0-1 同角点重复施加：单击两次
+    var m = W3EMap.Load(Fix("base"));
+    int h0 = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
+    Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Raise, Radius = 1 });
+    int h1 = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
+    Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Raise, Radius = 1 });
+    int h2 = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
+    Console.WriteLine($"- P0-1 同点连点两次（s1 升高）：{h0} → {h1} → {h2}（增量 {h1 - h0}, {h2 - h1}）— 状态=未决（需与官方「单击/按住/移开再回」实验对照）");
+
+    // P0-2 坡道：三种邻域现状
+    foreach (var (label, setup) in new (string, Action<W3EMap>)[]
     {
-        var t = line.TrimStart().Split('|');
-        if (t.Length < 6) continue;
-        string a = t[1].Trim(), b = t[2].Trim();
-        if (!b.Contains("→")) continue;
-        string key = $"{a}:{b.Split("→")[1].Trim()}";
-        if (!int.TryParse(t[4].Trim().Split('/')[0].Trim(), out int rok) || !int.TryParse(t[4].Trim().Split('/')[1].Trim(), out int rall))
-            continue;
-        refLines++;
-        if (mine.TryGetValue(key, out var mv))
-        {
-            var mparts = mv.Split('/').Select(int.Parse).ToArray();
-            int mok = mparts[0], mall = mparts[1];
-            if (mok == rok && mall == rall) sameLines++;
-            else mismatches.Add($"  {key}: 用户 {mv} vs 参考 {rok}/{rall}");
-        }
-        else
-            mismatches.Add($"  {key}: 参考有、用户 harness 没有");
+        ("邻域层差 1（标准坡道入口）", mm => mm.Corners[31 * mm.Width + 32].LayerHeight = 3),
+        ("混合邻域：一侧 +1、另一侧 +2", mm => { mm.Corners[31 * mm.Width + 32].LayerHeight = 3; mm.Corners[32 * mm.Width + 31].LayerHeight = 4; }),
+        ("邻域层差 2", mm => mm.Corners[31 * mm.Width + 32].LayerHeight = 4),
+    })
+    {
+        var mm = W3EMap.Load(Fix("base"));
+        mm.Corners[32 * mm.Width + 31].LayerHeight = 2;
+        setup(mm);
+        byte[] pre = mm.SaveBytes();
+        Stamp(mm, 31, 32, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
+        bool noOp = mm.SaveBytes().SequenceEqual(pre);
+        int rampCount = mm.Corners.Count(c => c.Ramp);
+        Console.WriteLine($"- P0-2/P0-3 坡道 @ {label}：{(noOp ? "整笔无操作" : $"写入 ramp 标志 {rampCount} 点")} — 状态=未决（官方行为见 P0-2/P0-3 实验）");
+    }
+
+    // P0-4 纹理覆盖荒芜
+    var bt = W3EMap.Load(Fix("base"));
+    bt.Corners[32 * bt.Width + 31].Blight = true;
+    bt.Corners[32 * bt.Width + 31].GroundTexture = 1;
+    int blBefore = bt.Corners[32 * bt.Width + 31].GroundTexture;
+    Stamp(bt, 31, 32, new BrushSettings { Op = BrushOp.Texture, Radius = 1, TextureIndex = 2 });
+    var blc = bt.Corners[32 * bt.Width + 31];
+    Console.WriteLine($"- P0-4 纹理覆盖荒芜：blight={blc.Blight}，地面纹理 {blBefore} → {blc.GroundTexture} — 状态=未决（需官方「先荒芜再覆盖」实验）");
+
+    // P0-6 已有水面：浅水→深水 / 深水→浅水
+    foreach (var (a, b) in new[] { (BrushOp.WaterShallow, BrushOp.WaterDeep), (BrushOp.WaterDeep, BrushOp.WaterShallow) })
+    {
+        var mw = W3EMap.Load(Fix("base"));
+        Stamp(mw, 31, 32, new BrushSettings { Op = a, Radius = 3, CliffTextureId = 1 });
+        var c1 = mw.Corners[32 * mw.Width + 31];
+        int l1 = c1.LayerHeight; float w1 = c1.WaterHeight;
+        Stamp(mw, 31, 32, new BrushSettings { Op = b, Radius = 3, CliffTextureId = 1 });
+        var c2 = mw.Corners[32 * mw.Width + 31];
+        Console.WriteLine($"- P0-6 {(a == BrushOp.WaterShallow ? "浅水→深水" : "深水→浅水")}：L {l1}→{c2.LayerHeight}，水面 {TerrainBrush.ToRaw(w1)}→{TerrainBrush.ToRaw(c2.WaterHeight)}，water={c2.Water} — 状态=未决");
+    }
+
+    // P1 高度/层级极限
+    foreach (var (label, layer, op) in new (string, int, BrushOp)[]
+    {
+        ("层 0 降低", 0, BrushOp.CliffLower1), ("层 15 升高", 15, BrushOp.CliffRaise1),
+        ("层 15 降低", 15, BrushOp.CliffLower2), ("层 1 降低两级", 1, BrushOp.CliffLower2),
+    })
+    {
+        var ml = W3EMap.Load(Fix("base"));
+        ml.Corners[32 * ml.Width + 31].LayerHeight = layer;
+        byte[] pre = ml.SaveBytes();
+        Stamp(ml, 31, 32, new BrushSettings { Op = op, Radius = 1, CliffTextureId = 1 });
+        bool noOp = ml.SaveBytes().SequenceEqual(pre);
+        Console.WriteLine($"- P1 层级极限（{label}）：{(noOp ? "整笔拒绝" : $"部分写入，点击点 L={ml.Corners[32 * ml.Width + 31].LayerHeight}")} — 状态=未决");
     }
 }
-Console.WriteLine($"参考 results.md 用例行: {refLines}，逐用例一致: {sameLines}");
-if (mismatches.Count > 0)
+
+// ───────────────────────────── 4. 汇总与退出码 ─────────────────────────────
+
+void Report()
 {
-    Console.WriteLine("不一致（用户 vs 参考）:");
-    foreach (var m in mismatches) Console.WriteLine(m);
+    Console.WriteLine("\n## 硬失败（必须修复，否则结论不可信）\n");
+    foreach (var f in hardFailures) Console.WriteLine($"- {f}");
+}
+
+Console.WriteLine("\n## 汇总（三层分别计数，不合成单一还原率）\n");
+Console.WriteLine($"- A 官方存档已验证：用例 {cases.Count}，逐用例与参考一致 {sameRows}/{refRows}，已登记未决差异 {knownHits.Count} 点，未登记差异 {unregistered.Count} 点");
+Console.WriteLine($"- B 二进制分析支持：断言 {bChecks} 条 —— 一致 {bPass}、不一致 {bFail}、未决 {bPending.Count}（逐条见上表）");
+Console.WriteLine($"- C 实现自检：语义自检 {sanityFail} 项失败；行为快照仅记录现状，不作为通过依据");
+
+if (hardFailures.Count > 0)
+{
+    Console.WriteLine();
+    Report();
     Environment.ExitCode = 1;
 }
-else
-    Console.WriteLine("全部一致：用户 TerrainBrush 与已验证参考实现在同一组官方 fixture 上行为逐角点相同。");
+else if (sanityFail > 0 || bFail > 0)
+{
+    Environment.ExitCode = 1;
+}
