@@ -58,10 +58,15 @@ if (cases.Count == 0) HardFail("cases.json 里没有任何用例");
 
 // 已知差异登记
 var known = new List<JsonElement>();
+var knownBin = new Dictionary<string, JsonElement>();
 {
     using var kd = JsonDocument.Parse(File.ReadAllText(knownPath));
     if (kd.RootElement.TryGetProperty("entries", out var entries))
         foreach (var e in entries.EnumerateArray()) known.Add(e.Clone());
+    // B 层（二进制分析支持）已登记的不一致：状态 实现缺陷/未决，逐条列出但不判失败
+    if (kd.RootElement.TryGetProperty("bin", out var binEntries))
+        foreach (var e in binEntries.EnumerateArray())
+            knownBin[e.GetProperty("name").GetString()!] = e.Clone();
 }
 
 string Fix(string n) => Path.Combine(baseDir, "fixtures", n + ".w3e");
@@ -377,14 +382,28 @@ if (metadataGaps.Count > 0)
 Console.WriteLine("\n## B. 二进制分析支持（1.32.10.18820 反编译，逐条对实现断言）\n");
 Console.WriteLine("| 断言 | 1.32 证据 | 实现观测 | 判定 |");
 Console.WriteLine("|---|---|---|---|");
-int bChecks = 0, bPass = 0, bFail = 0;
+int bChecks = 0, bPass = 0, bFail = 0, bRegistered = 0;
 var bPending = new List<string>();
+var bRegHits = new List<string>();
+var bNotes = new List<string>();
+void BinNote(string name, string evidence, string statement)
+{
+    bChecks++;
+    bNotes.Add($"| {name} | {evidence} | {statement} | 已核实 |");
+}
 void BinAssert(string name, string evidence, Func<(bool ok, string observed)> probe)
 {
     bChecks++;
     var (okB, obs) = probe();
-    if (okB) bPass++; else bFail++;
-    Console.WriteLine($"| {name} | {evidence} | {obs} | {(okB ? "一致" : "**不一致**")} |");
+    string verdict;
+    if (okB) { bPass++; verdict = "一致"; }
+    else if (knownBin.TryGetValue(name, out var ke))
+    {
+        bRegistered++; verdict = $"已登记（{ke.GetProperty("status").GetString()}）";
+        bRegHits.Add($"| {name} | {ke.GetProperty("expected").GetString()} | {obs} | {ke.GetProperty("status").GetString()} | {ke.GetProperty("reason").GetString()} |");
+    }
+    else { bFail++; verdict = "**不一致**"; }
+    Console.WriteLine($"| {name} | {evidence} | {obs} | {verdict} |");
 }
 // 未决：二进制已确认、但实现侧是否应当对齐尚未判定（不计入失败，必须保留在报告里）
 void BPending(string name, string evidence, string observed)
@@ -438,9 +457,38 @@ BinAssert("噪声幅度 (rand−10)·6.4（k∈[−10,10]）", "`FUN_1402797a0`�
     return (hi <= 256 && lo >= -256, $"覆盖区Δraw ∈ [{lo},{hi}]（±256 = ±10·6.4·4）");
 });
 BinAssert("平滑核 = {1,2,1,2,0,2,1,2,1}", "`0x1417bc528` 权重表；中心权重 0", () => (true, "行为由 A 层 smooth 用例覆盖（本 harness 不直接读表）"));
-BPending("悬崖变化量 = Rng(0,3)", "`FUN_14026a480`：`Rng(0,3)<<5`（写角点 `+0x09` bit5-6）", "fixture 未覆盖该字段，需 P0-5 实验补 fixture 后才能断言");
-BPending("整平采样 clamp 上界 2560（20 层×128）", "`FUN_1401e2070` 用 2560.0f；实现用 MaxHeightWorld=" + TerrainBrush.MaxHeightWorld, "两者语义关系未定（见 `INDEX-1.32-capture.md` U3/U4），需实验确认整平目标来源");
-BPending("斜率/高度上限来自地图 INI（非字面量）", "`[map+0xbc4/0xbc8/0xbcc]`；`610.2f` 二进制中不存在", "实现以 const MaxHeightWorld/MinHeightWorld/MaxSlopeDeg 固定，尚未接 INI（未判失败，属待接线）");
+// 原「悬崖变化量 Rng(0,3)」已升级为上方的实测断言（并抓到实现缺陷），不再列为未决
+BinNote("整平采样 clamp 上界 2560 的作用域", "`FUN_1401e2070` 内 `if (fVar8 < 2560.0) ... fVar8 = 2560.0`（全二进制仅此处及 12713 行同类用法）",
+    "2560 只出现在整平**采样/预览**路径；写入路径用配置量 `[+0xbc4]/[+0xbc8]`（Max/MinHeight），与实现 MaxHeightWorld=" + TerrainBrush.MaxHeightWorld + " 属不同角色，不冲突");
+BinNote("高度/斜率上限的来源", "`FUN_140265f20`：`FUN_140146f20(\"Terrain\",\"MaxHeight\"/\"MinHeight\"/\"MaxSlope\",0)` → `[+0xbc4]/[+0xbc8]/[+0xbcc]`，且 `[+0xbd0]=tan(MaxSlope)`、`[+0xbd4]=(MaxHeight+256)/128`",
+    "确认来自配置表（非字面量）；实现用 const 50f/1536f/−128f 作**替代默认值**，属待接线而非行为不一致");
+BinAssert("悬崖变体范围 = 0..3（2 位）", "`FUN_14026a480`：`FUN_14014e6a0(0,3)` → `bVar = bVar & 0x1f | c << 5`", () =>
+{
+    int maxCw = 0;
+    TerrainBrush.Rng = new Random(12345);
+    for (int t = 0; t < 40; t++)
+    {
+        var mv = W3EMap.Load(Fix("base"));
+        Stamp(mv, 31, 32, new BrushSettings { Op = BrushOp.CliffRaise1, Radius = 3, CliffTextureId = 1 });
+        foreach (var c in mv.Corners) if (c.CliffTexture == 1) maxCw = Math.Max(maxCw, c.CliffVariation);
+    }
+    TerrainBrush.Rng = new Random();
+    return (maxCw <= 3, $"40 次笔刷的悬崖变体最大值 = {maxCw}（官方上界 3）");
+});
+if (bRegHits.Count > 0)
+{
+    Console.WriteLine("\n### B.2 已登记的不一致（二进制已证实、实现尚未对齐；**禁止当作通过**）\n");
+    Console.WriteLine("| 断言 | 官方/二进制期望 | 实现观测 | 状态 | 原因 |");
+    Console.WriteLine("|---|---|---|---|---|");
+    foreach (var l in bRegHits) Console.WriteLine(l);
+}
+if (bNotes.Count > 0)
+{
+    Console.WriteLine("\n### B.3 已核实的说明性结论（REA 已证清，仍不参与通过判定）\n");
+    Console.WriteLine("| 结论 | 1.32 证据 | 说明 | 判定 |");
+    Console.WriteLine("|---|---|---|---|");
+    foreach (var l in bNotes) Console.WriteLine(l);
+}
 if (bPending.Count > 0)
 {
     Console.WriteLine("\n### B.1 未决断言（二进制已确认、实现是否应对齐未定；**禁止当作通过**）\n");
@@ -596,7 +644,7 @@ void Report()
 
 Console.WriteLine("\n## 汇总（三层分别计数，不合成单一还原率）\n");
 Console.WriteLine($"- A 官方存档已验证：用例 {cases.Count}，逐用例与参考一致 {sameRows}/{refRows}，已登记未决差异 {knownHits.Count} 点，未登记差异 {unregistered.Count} 点");
-Console.WriteLine($"- B 二进制分析支持：断言 {bChecks} 条 —— 一致 {bPass}、不一致 {bFail}、未决 {bPending.Count}（逐条见上表）");
+Console.WriteLine($"- B 二进制分析支持：断言 {bChecks} 条 —— 一致 {bPass}、不一致 {bFail}、已登记不一致 {bRegistered}、未决 {bPending.Count}（逐条见上表）");
 Console.WriteLine($"- C 实现自检：语义自检 {sanityFail} 项失败；行为快照仅记录现状，不作为通过依据");
 
 if (hardFailures.Count > 0)

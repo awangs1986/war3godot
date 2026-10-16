@@ -32,7 +32,7 @@ dotnet run -- docs/terrain-reference --diff-limit 200
 - `A.5` **噪声**：覆盖区内改动 / 覆盖区内越界 / **覆盖区外（坡度后处理外扩，单独列出，不计噪声越界）** + Δraw 范围 + 量化合格率
 - `A.6` 与参考实现 `results.md` 的逐用例对照（严格）
 - `A.7` 实验元数据缺口（协议要求字段，不判失败）
-- `B` / `B.1` 二进制分析支持断言（一致 / 不一致 / 未决）
+- `B` / `B.1` / `B.2` / `B.3` 二进制分析支持断言（一致 / 不一致 / **已登记不一致** / 已核实说明 / 未决）
 - `C.1` 语义自检 · `C.2` 待实验确认的行为快照（同点连点、坡道三邻域、纹理覆盖荒芜、水面叠加、层级极限）
 
 ## 退出码
@@ -59,5 +59,6 @@ dotnet run -- docs/terrain-reference --diff-limit 200
 
 采集规范、P0/P1 实验清单、"复杂地形方块问题"专项小地图见：
 
-- `docs/terrain-reference/experiments/PLAN.md`
-- `docs/terrain-reference/experiments/CASE-FORMAT.md`
+- `docs/terrain-reference/experiments/PLAN.md`（实验清单与优先级）
+- `docs/terrain-reference/experiments/CASE-FORMAT.md`（用例字段与失败条件）
+- `docs/terrain-reference/experiments/FINDINGS.md`（**已做的验证结论总账**：REA 证据、官方存档反推的悬崖规则、20 点定论、仍未验证项）

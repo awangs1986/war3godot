@@ -428,7 +428,9 @@ public static class TerrainBrush
             var c = At(m, x, y);
             c.LayerHeight = T;
             c.CliffTexture = cliffType;
-            c.CliffVariation = Rng.Next(8);
+            // 变体只有 2 位：官方 FUN_14026a480 `FUN_14014e6a0(0,3)` → `&0x1f | c<<5`
+            // （REA 2026-10-16 实测；官方 fixture 的 cw 只出现 {0,1,2}）
+            c.CliffVariation = Rng.Next(4);
             brushed.Add((x, y));
         }
         Propagate(m, brushed, cliffType);
@@ -464,7 +466,7 @@ public static class TerrainBrush
                     if (t == nc.LayerHeight) continue;
                     nc.LayerHeight = t;
                     if (cliffType != -1) nc.CliffTexture = cliffType;   // 传播点也染类型
-                    nc.CliffVariation = Rng.Next(8);
+                    nc.CliffVariation = Rng.Next(4);   // 传播点同样只有 2 位（同上）
                     depth[(nx, ny)] = d + 1;
                     Visit(nx, ny, d + 1);
                 }
