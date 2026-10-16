@@ -1,0 +1,76 @@
+{
+ "steps": [
+  {
+   "name": "Y6_m_p0_p0",
+   "note": "raise s1 标记 @ 0,0",
+   "op": "raise",
+   "size": 1,
+   "dx": 0,
+   "dy": 0
+  },
+  {
+   "name": "Y6_m_p36_p0",
+   "note": "raise s1 标记 @ 36,0",
+   "op": "raise",
+   "size": 1,
+   "dx": 36,
+   "dy": 0
+  },
+  {
+   "name": "Y6_m_p72_p0",
+   "note": "raise s1 标记 @ 72,0",
+   "op": "raise",
+   "size": 1,
+   "dx": 72,
+   "dy": 0
+  },
+  {
+   "name": "Y6_m_m72_p0",
+   "note": "raise s1 标记 @ -72,0",
+   "op": "raise",
+   "size": 1,
+   "dx": -72,
+   "dy": 0
+  },
+  {
+   "name": "Y6_m_p0_p36",
+   "note": "raise s1 标记 @ 0,36",
+   "op": "raise",
+   "size": 1,
+   "dx": 0,
+   "dy": 36
+  },
+  {
+   "name": "Y6_m_p0_p72",
+   "note": "raise s1 标记 @ 0,72",
+   "op": "raise",
+   "size": 1,
+   "dx": 0,
+   "dy": 72
+  },
+  {
+   "name": "Y6_m_p0_m72",
+   "note": "raise s1 标记 @ 0,-72",
+   "op": "raise",
+   "size": 1,
+   "dx": 0,
+   "dy": -72
+  },
+  {
+   "name": "Y6_m_p72_p72",
+   "note": "raise s1 标记 @ 72,72",
+   "op": "raise",
+   "size": 1,
+   "dx": 72,
+   "dy": 72
+  },
+  {
+   "name": "Y6_m_m72_m72",
+   "note": "raise s1 标记 @ -72,-72",
+   "op": "raise",
+   "size": 1,
+   "dx": -72,
+   "dy": -72
+  }
+ ]
+}
