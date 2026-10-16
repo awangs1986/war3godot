@@ -303,7 +303,7 @@ if (diffLines.Count > 0)
 }
 if (knownHits.Count > 0)
 {
-    Console.WriteLine("\n### A.3 已登记差异（逐点列出，状态保持「未决」，禁止当作通过）\n");
+    Console.WriteLine("\n### A.3 已登记差异（逐点列出；状态见每行，未修复前不作为通过依据）\n");
     foreach (var l in knownHits) Console.WriteLine(l);
 }
 if (unregistered.Count > 0)
@@ -643,7 +643,7 @@ void Report()
 }
 
 Console.WriteLine("\n## 汇总（三层分别计数，不合成单一还原率）\n");
-Console.WriteLine($"- A 官方存档已验证：用例 {cases.Count}，逐用例与参考一致 {sameRows}/{refRows}，已登记未决差异 {knownHits.Count} 点，未登记差异 {unregistered.Count} 点");
+Console.WriteLine($"- A 官方存档已验证：用例 {cases.Count}，逐用例与参考一致 {sameRows}/{refRows}，已登记差异 {knownHits.Count} 点（状态逐点标注），未登记差异 {unregistered.Count} 点");
 Console.WriteLine($"- B 二进制分析支持：断言 {bChecks} 条 —— 一致 {bPass}、不一致 {bFail}、已登记不一致 {bRegistered}、未决 {bPending.Count}（逐条见上表）");
 Console.WriteLine($"- C 实现自检：语义自检 {sanityFail} 项失败；行为快照仅记录现状，不作为通过依据");
 
