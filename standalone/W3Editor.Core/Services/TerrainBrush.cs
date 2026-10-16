@@ -1,14 +1,53 @@
-// 【测试算法 / 1:1 HiveWE】2026-07-22 — 已封口
-// 实测 Raise @ (32,32) size=4 Δ=0.5：存盘后 4225 角点 GroundHeight 与 HiveWE 全等
+// 【官方 1:1】2026-10-15 — 由 2026-07-22 的 "1:1 HiveWE 封口版" 迁移而来
+//
+// 依据（详见 docs/official-terrain-algorithms.md，ch0-12 + §12.15 修正清单）：
+//   · 1.27 源码逆向：CTerrainHeight 0x57e700/0x581460/0x57e3e0→0x57e440/0x57f8f0、
+//     CTerrainCliff 0x574470/0x574a50/0x5748c0/0x573990、CTerrainWater 0x603cc0、
+//     Ramp 0x583310/0x584270（地址对照 docs/classic-we-rea-comparison.md）
+//   · 1.32 存档黑盒对照：docs/terrain-reference（45 个 fixture 用例，逐角点验证）
+//   核心认识：1:1 HiveWE ≠ 1:1 官方。HiveWE 的连续 frameDelta 模型、线性衰减、
+//   8 邻均匀平滑、无坡度钳制等全部换成官方离散单次施加 + 流水线模型。
+//
+// 官方模型（本文件实现的全部要点）：
+//   · 尺寸档位 1/2/3/5/8，半径 R = size−1（角点）；圆形 d²≤R²，方形 |dx|,|dy|≤R
+//   · 量化 raw = trunc((world+2048)·4)；512 raw = 1 层 = 128 world（float32 精度）
+//   · 高度流水线：①先算完（用施加前值）②量化写回 ③SlopeClamp（MaxSlope 50° +
+//     MaxHeight 1536 / MinHeight −128，递归 8 邻）④记录改动
+//   · Raise/Lower：Δworld = size·6.4·cos(πd/2R)，强制圆形，每次施加只加一次
+//   · Plateau：按下捕获 h0（this+0x948），覆盖集合全写 h0，遵守形状
+//   · Noise：Δ = (rand%21−10)·6.4 world（0x581460，n = int(128/6.4)+1 = 21）
+//   · Smooth：核 [1,2,1;2,0,2;1,2,1]，new = W1·h + W2·Σ(k·h邻)/Σk，
+//     W1/W2 = 0.80/0.20（Shift 1.00/0.05），快照式（先算完再写）
+//   · Cliff：T = L(按下点)+Δ 按下时捕获、拖动全程用；T 越出 [0,15] → 整笔拒绝；
+//     覆盖集合写 L=T + 悬崖类型 + 随机变体；3×3 外扩染类型；层差传播（8 邻 ±2，
+//     改动点写类型+变体，递归）
+//   · 浅水/深水：写水旗+水面高度（覆盖集合，水面外扩一圈）→ 整平 size+2 到 h0 →
+//     悬崖 size 到 T；干地 Δ=−1/−2，已有水按 水面−地面总高 计算
+//   · Ramp：只响应点击角点；4 邻恰有一个高 1 层 → 写 3 角（c 外侧、c、高侧）；
+//     无 4 邻更高且恰有一个斜邻高 1 层 → 3×3；其余不动（层级不变，只写 ramp 标志）
+//   · Texture：覆盖集合写纹理下标 + 重随变体（约 91% 落 {0,4,8,12,16,17}，
+//     其余均匀 1..15）；不清 blight（官方行为，与旧 HiveWE 版不同）
+//   · Blight：覆盖集合写 blight 旗（水角点不接收）+ 外围约 R+2 随机改贴图
+//   · Boundary：覆盖集合写/清 boundary 旗
+//
+// 未验证项（与参考实现同等诚实）：
+//   · 1.32 静态代码段磁盘加密（.text 熵 8.000），一切 1.32 行为只能黑盒存档验证
+//   · 拖拽中多次施加的叠加细节（本实现：一次 Apply 调用 = 一次官方完整施加）
+//   · 右键语义（本实现沿用 Raise↔Lower 等反转映射，无存档对照）
+//   · 悬崖按水夹层 0x5764a0（"夹后值改写 T" 怪癖）、水相关高度下限、
+//     悬崖后高度修正 0x57f270 → 均未实现（参考实现也未实现）
+//   · DeepExtra（this+0x31c）常数未读出，取 128 world
+//   · 官方噪声随机序列不可复现（只能范围+量化+统计分布对照）
+//
 // 备份：TerrainBrush.cs.pre_hivewe_test.bak / TerrainBrush.cs.before_1to1.bak
 //       D:\temp\cursor\w3editor\algo_backup\
+// 验证：standalone/W3EditorOfficialTest（对照 docs/terrain-reference 官方 fixture，
+//       逐角点比较，期望值 = 参考实现 results.md 的逐用例数字）
 using W3Editor.Formats;
 
 namespace W3Editor.Services;
 
-/// <summary>
-/// Brush tool set — 1:1 behavioural port of HiveWE terrain operators.
-/// </summary>
+/// <summary>官方笔刷操作集。Noise/Blight 为 2026-10-15 按 §12.15 新增。</summary>
 public enum BrushOp
 {
     None,
@@ -17,7 +56,7 @@ public enum BrushOp
     Lower,
     Plateau,
     Smooth,
-    /// <summary>HiveWE exposes this deformation but its current operator is a no-op.</summary>
+    /// <summary>HiveWE 遗留：官方无对应操作（no-op）。</summary>
     Ripple,
     CliffLower2,
     CliffLower1,
@@ -31,9 +70,13 @@ public enum BrushOp
     BoundaryRemove,
     /// <summary>Internal: right-button erase for the water tools (not a palette entry).</summary>
     WaterErase,
+    /// <summary>噪声（0x581460）：Δ=(rand%21−10)·6.4 world，流水线量化+坡度钳制。</summary>
+    Noise,
+    /// <summary>荒芜：覆盖集合写 blight 旗（水角点不接收）+ 外围随机贴图。</summary>
+    Blight,
 }
 
-/// <summary>HiveWE <c>Brush::Shape</c>.</summary>
+/// <summary>官方形状：圆 / 方。Diamond 为 HiveWE 遗留，按圆形处理（官方无菱形）。</summary>
 public enum BrushShape
 {
     Circle,
@@ -45,557 +88,517 @@ public sealed class BrushSettings
 {
     public BrushOp Op = BrushOp.None;
     /// <summary>
-    /// HiveWE UI brush size (after <c>set_size</c> divide by size_granularity=4).
-    /// Footprint in corners = this value; internal size.x = Radius * 4.
+    /// 官方笔刷档位 1/2/3/5/8（半径 = Radius−1 角点）。兼容任意 1..32。
     /// </summary>
     public int Radius = 4;
-    /// <summary>
-    /// Unused by HiveWE height path (HiveWE uses frame_delta only).
-    /// Kept for MCP: when calling Apply without timed input, pass as frameDelta.
-    /// </summary>
+    /// <summary>[兼容字段] 官方单次施加模型不使用；保留给旧调用方。</summary>
     public float Strength = 0.6f;
     public int TextureIndex;
     public BrushShape Shape = BrushShape.Circle;
-    /// <summary>HiveWE <c>CliffOperator::cliff_id</c> written into corner cliff texture.</summary>
+    /// <summary>
+    /// 写入角点 cliffTexture 字节的值 = 本图悬崖列表（CliffTilesets）下标（官方 0x574a50 语义）。
+    /// </summary>
     public int CliffTextureId;
+    /// <summary>Shift 平滑：W1/W2 = 1.00/0.05（默认 0.80/0.20）。</summary>
+    public bool Shift = false;
 }
 
 /// <summary>
-/// Per-stroke state. HiveWE computes stroke targets once in apply_begin from
-/// the integer center of the clipped initial brush area; stamps then reuse them.
+/// 笔画状态：官方在按下时捕获目标（Plateau 的 h0 → this+0x948；Cliff 的 T → this+0x94c），
+/// 拖动全程复用。
 /// </summary>
 public sealed class BrushStroke
 {
     public bool Initialized;
+    /// <summary>按下时点击点 h 字段的世界高度（world 单位，= GroundHeight·128）。</summary>
     public float PlateauGround;
+    /// <summary>[兼容字段] 官方 1.32 水流程不再需要；保留。</summary>
     public float PlateauWater;
+    /// <summary>按下时捕获的悬崖目标层 T = L(按下点)+Δ（未钳制，越界时整笔拒绝）。</summary>
     public int TargetLayer;
 }
 
 /// <summary>
-/// 【测试算法 / TEST ALGORITHM — HiveWE 1:1 — 2026-07-22】
-/// Corner brush ops matching HiveWE:
-/// <list type="bullet">
-/// <item>size_granularity=4; area = UI size; falloff denom = UI*4</item>
-/// <item>get_unclipped_pos corner: floor(mouse - size/2 + 1)</item>
-/// <item>Brush::contains circle/square/diamond</item>
-/// <item>Raise/Lower: falloff * frame_delta (press 0.5, drag dt)</item>
-/// <item>Smooth / cliff / ramp / texture blight-near-cliff gates</item>
-/// </list>
-/// Warsmash has no terrain brush — HiveWE is authoritative.
+/// 【官方 1:1 / TEST ALGORITHM — 2026-10-15】地形角点笔刷，
+/// 1:1 官方编辑器（1.27 源码 + 1.32 存档验证），不是 HiveWE。
+/// 一次 <see cref="Apply"/> 调用 = 一次官方完整施加（单次点击语义）。
 /// </summary>
 public static class TerrainBrush
 {
-    public const int SizeGranularity = 4;
-    private const float MinHeight = -16f;
-    private const float MaxHeight = 15.99f;
-    private const int MaxLayer = 15;
-    private const float WaterOffset = -0.7f;
-
-    private static float FinalGround(W3Corner c) => c.GroundHeight + c.LayerHeight - 2f;
-    private static float FinalWater(W3Corner c) => c.WaterHeight + WaterOffset;
+    // ---- 官方常数（1.27 MiscData + 源码逆向）----
+    public const int SizeGranularity = 4;   // [兼容字段] 官方无粒度概念，保留
+    public const int MaxLayer = 15;         // this+0x988
+    public const float MaxSlopeDeg = 50f;   // MiscData MaxSlope
+    public const float MaxHeightWorld = 1536f;  // 12 层
+    public const float MinHeightWorld = -128f;  // −1 层
+    const float StepWorld = 6.4f;               // 0.05 层
+    const float WaterOffsetWorldL = -0.7f * 128f;  // L 地形水面偏移（Water.slk）
+    const float WaterOffsetWorldA = -0.6f * 128f;  // A 地形（Water.slk）
+    const float DeepExtraWorld = 128f;      // this+0x31c【未验证常数，LS03→LS04 只约束 (38.4,166.4)】
 
     /// <summary>
-    /// One HiveWE <c>TerrainBrush::apply(frame_delta)</c> at mouse corner (cx, cy).
-    /// Press should pass <paramref name="frameDelta"/> = 0.5; drag passes real dt.
+    /// 随机源：悬崖变体 / 噪声 / 纹理变体共用。官方随机序列不可复现，
+    /// 对照测试只比较范围+量化+统计分布；harness 可注入固定种子。
     /// </summary>
-    public static void Apply(W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke,
-        float frameDelta = 0.5f) => Apply(map, (float)cx, (float)cy, s, erase, stroke, frameDelta);
+    public static Random Rng = new Random();
 
-    /// <summary>Preserves HiveWE mouse_world fractions for footprint and ramp direction.</summary>
-    public static void Apply(
-        W3EMap map, float cx, float cy, BrushSettings s, bool erase, BrushStroke stroke,
-        float frameDelta = 0.5f)
+    // ---- raw 换算（float32 下与 raw 双向精确：512 = 2^9）----
+    /// <summary>GroundHeight（层分数）→ 文件 raw 14 位。</summary>
+    public static int ToRaw(float groundHeight) => (int)(groundHeight * 512f + 8192f);
+    /// <summary>文件 raw → GroundHeight（层分数）。</summary>
+    public static float ToLayers(int raw) => (raw - 8192) / 512f;
+    /// <summary>世界高度 → raw（官方 ftol：向 0 截断）。</summary>
+    public static int ToRawWorld(float world) => (int)((world + 2048f) * 4f);
+    /// <summary>角点 h 字段世界高度（= 官方 World(raw)）。</summary>
+    public static float WorldOf(W3Corner c) => c.GroundHeight * 128f;
+
+    private static bool Inside(W3EMap m, int x, int y) => x >= 0 && y >= 0 && x < m.Width && y < m.Height;
+    private static W3Corner At(W3EMap m, int x, int y) => m.Corners[y * m.Width + x];
+
+    // ================= 公开 API（签名与 HiveWE 版兼容）=================
+
+    public static void Apply(W3EMap map, int cx, int cy, BrushSettings s, bool erase, BrushStroke stroke, float frameDelta = 0.5f)
+        => Apply(map, (float)cx, (float)cy, s, erase, stroke, frameDelta);
+
+    /// <summary>
+    /// 在鼠标角点 (cx, cy) 施加一次笔刷（官方 = 一次完整点击）。
+    /// 中心取最近的角点（官方：中心永远是鼠标下最近的角点，偶数尺寸不偏半格）。
+    /// <paramref name="frameDelta"/> 仅为签名兼容：官方单次施加，不按帧累积。
+    /// </summary>
+    public static void Apply(W3EMap map, float cx, float cy, BrushSettings s, bool erase, BrushStroke stroke, float frameDelta = 0.5f)
     {
-        if (!float.IsFinite(cx) || !float.IsFinite(cy)) return;
-        BrushOp op = Reverse(s.Op, erase);
-        if (op == BrushOp.None)
-            return;
+        if (map == null || s == null || stroke == null) return;
+        BrushOp op = s.Op;
+        if (op == BrushOp.None) return;
+        if (erase) op = Reverse(op);
 
-        int uiSize = Math.Clamp(s.Radius, 1, 32);
-        int internalSize = uiSize * SizeGranularity;
-        // TerrainBrush::get_unclipped_pos (corner type)
-        int posX = (int)MathF.Floor(cx - uiSize / 2f + 1f);
-        int posY = (int)MathF.Floor(cy - uiSize / 2f + 1f);
-        int areaX = Math.Max(0, posX);
-        int areaY = Math.Max(0, posY);
-        int areaR = Math.Min(map.Width, posX + uiSize);
-        int areaB = Math.Min(map.Height, posY + uiSize);
-        if (areaR <= areaX || areaB <= areaY)
-            return;
+        int size = Math.Clamp(s.Radius, 1, 32);
+        int ccx = Math.Clamp((int)MathF.Round(cx), 0, map.Width - 1);
+        int ccy = Math.Clamp((int)MathF.Round(cy), 0, map.Height - 1);
 
-        int adjX = Math.Min(posX, 0);
-        int adjY = Math.Min(posY, 0);
-        // HiveWE stores these in int (float expression truncates toward zero).
-        int centerX = (int)(areaX + (areaR - areaX) * 0.5f);
-        int centerY = (int)(areaY + (areaB - areaY) * 0.5f);
         if (!stroke.Initialized)
         {
-            InitializeStroke(map, centerX, centerY, op, stroke);
             stroke.Initialized = true;
+            InitializeStroke(map, ccx, ccy, op, stroke);
         }
-
-        bool Inside(int i, int j)
-        {
-            int lx = i - areaX - adjX;
-            int ly = j - areaY - adjY;
-            return Contains(lx, ly, uiSize, s.Shape);
-        }
-
-        switch (op)
-        {
-            case BrushOp.Texture:
-                ApplyTexture(map, areaX, areaY, areaR, areaB, Inside, s.TextureIndex, erase);
-                break;
-            case BrushOp.Raise:
-            case BrushOp.Lower:
-            case BrushOp.Plateau:
-            case BrushOp.Smooth:
-            case BrushOp.Ripple:
-                ApplyHeight(map, areaX, areaY, areaR, areaB, Inside, centerX, centerY,
-                    internalSize, op, frameDelta, stroke);
-                break;
-            case BrushOp.Ramp:
-                if (erase)
-                    ApplyRampErase(map, areaX, areaY, areaR, areaB, Inside);
-                else
-                    ApplyRamps(map, areaX, areaY, areaR, areaB, Inside, cx, cy);
-                break;
-            case BrushOp.WaterErase:
-                ApplyWaterErase(map, areaX, areaY, areaR, areaB, Inside);
-                break;
-            case BrushOp.BoundaryAdd:
-            case BrushOp.BoundaryRemove:
-                ApplyBoundary(map, areaX, areaY, areaR, areaB, Inside, op == BrushOp.BoundaryAdd);
-                break;
-            default:
-                ApplyCliffs(map, areaX, areaY, areaR, areaB, Inside, posX, posY, uiSize, s, op, stroke);
-                break;
-        }
+        Stroke(map, ccx, ccy, size, s, op, stroke);
     }
 
-    /// <summary>HiveWE <c>Brush::contains</c> — args in brush-local UI units.</summary>
-    public static bool Contains(int posX, int posY, int uiSize, BrushShape shape)
+    /// <summary>右键 = 官方语义的反转（无存档对照，沿用旧映射）。【未测】</summary>
+    internal static BrushOp Reverse(BrushOp op) => op switch
     {
-        int half = uiSize / 2;
-        return shape switch
-        {
-            BrushShape.Square => true,
-            BrushShape.Diamond => Math.Abs(posX - half) + Math.Abs(posY - half) <= half,
-            _ => (posX - half) * (posX - half) + (posY - half) * (posY - half) <= half * half,
-        };
-    }
+        BrushOp.Raise => BrushOp.Lower,
+        BrushOp.Lower => BrushOp.Raise,
+        BrushOp.CliffRaise1 => BrushOp.CliffLower1,
+        BrushOp.CliffRaise2 => BrushOp.CliffLower2,
+        BrushOp.CliffLower1 => BrushOp.CliffRaise1,
+        BrushOp.CliffLower2 => BrushOp.CliffRaise2,
+        BrushOp.WaterShallow => BrushOp.WaterErase,
+        BrushOp.WaterDeep => BrushOp.WaterErase,
+        BrushOp.BoundaryAdd => BrushOp.BoundaryRemove,
+        BrushOp.BoundaryRemove => BrushOp.BoundaryAdd,
+        _ => op,
+    };
 
-    private static BrushOp Reverse(BrushOp op, bool erase)
-    {
-        if (!erase)
-            return op;
-        return op switch
-        {
-            BrushOp.Raise => BrushOp.Lower,
-            BrushOp.Lower => BrushOp.Raise,
-            BrushOp.CliffRaise1 => BrushOp.CliffLower1,
-            BrushOp.CliffRaise2 => BrushOp.CliffLower2,
-            BrushOp.CliffLower1 => BrushOp.CliffRaise1,
-            BrushOp.CliffLower2 => BrushOp.CliffRaise2,
-            BrushOp.WaterShallow => BrushOp.WaterErase,
-            BrushOp.WaterDeep => BrushOp.WaterErase,
-            BrushOp.BoundaryAdd => BrushOp.BoundaryRemove,
-            BrushOp.BoundaryRemove => BrushOp.BoundaryAdd,
-            _ => op,
-        };
-    }
-
+    /// <summary>按下捕获（官方 this+0x948 / this+0x94c）：拖动全程复用。</summary>
     private static void InitializeStroke(W3EMap map, int cx, int cy, BrushOp op, BrushStroke stroke)
     {
-        var center = map.GetCorner(Math.Clamp(cx, 0, map.Width - 1), Math.Clamp(cy, 0, map.Height - 1));
-        if (center == null)
-            return;
-        stroke.PlateauGround = center.GroundHeight;
-        stroke.PlateauWater = center.WaterHeight;
-
-        int layer = center.LayerHeight;
+        var c = At(map, cx, cy);
         switch (op)
         {
-            case BrushOp.CliffLower1: layer -= 1; break;
-            case BrushOp.CliffLower2: layer -= 2; break;
-            case BrushOp.CliffRaise1: layer += 1; break;
-            case BrushOp.CliffRaise2: layer += 2; break;
-            case BrushOp.CliffLevel: break;
-            case BrushOp.WaterShallow:
-                if (!center.Water) layer -= 1;
-                else if (FinalWater(center) > FinalGround(center) + 1f) layer += 1;
+            case BrushOp.Plateau:
+                stroke.PlateauGround = WorldOf(c);
                 break;
-            case BrushOp.WaterDeep:
-                if (!center.Water) layer -= 2;
-                else if (FinalWater(center) < FinalGround(center) + 1f) layer -= 1;
+            case BrushOp.CliffLower1: stroke.TargetLayer = c.LayerHeight - 1; break;
+            case BrushOp.CliffLower2: stroke.TargetLayer = c.LayerHeight - 2; break;
+            case BrushOp.CliffRaise1: stroke.TargetLayer = c.LayerHeight + 1; break;
+            case BrushOp.CliffRaise2: stroke.TargetLayer = c.LayerHeight + 2; break;
+            case BrushOp.CliffLevel: stroke.TargetLayer = c.LayerHeight; break;
+            default: break;
+        }
+    }
+
+    // ================= 分派 =================
+
+    private static void Stroke(W3EMap m, int cx, int cy, int size, BrushSettings s, BrushOp op, BrushStroke stroke)
+    {
+        var shape = s.Shape == BrushShape.Diamond ? BrushShape.Circle : s.Shape;
+        switch (op)
+        {
+            case BrushOp.Raise: RaiseLower(m, cx, cy, size, +1); break;
+            case BrushOp.Lower: RaiseLower(m, cx, cy, size, -1); break;
+            case BrushOp.Plateau: Plateau(m, cx, cy, size, shape, stroke.PlateauGround); break;
+            case BrushOp.Smooth: Smooth(m, cx, cy, size, shape, s.Shift); break;
+            case BrushOp.Noise: Noise(m, cx, cy, size, shape); break;
+            case BrushOp.Ripple: break;  // [兼容] 官方无对应
+            case BrushOp.CliffLower1:
+            case BrushOp.CliffLower2:
+            case BrushOp.CliffLevel:
+            case BrushOp.CliffRaise1:
+            case BrushOp.CliffRaise2:
+                Cliff(m, cx, cy, size, shape, stroke.TargetLayer, s.CliffTextureId);
                 break;
-        }
-        stroke.TargetLayer = Math.Clamp(layer, 0, MaxLayer);
-    }
-
-    // ---- TextureOperator ----
-
-    private static void ApplyTexture(
-        W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, int textureIndex, bool erase)
-    {
-        if (erase || textureIndex < 0 || textureIndex >= map.GroundTilesets.Count)
-            return;
-        for (int j = ay; j < ab; j++)
-        {
-            for (int i = ax; i < ar; i++)
-            {
-                if (!inside(i, j)) continue;
-                var c = map.GetCorner(i, j)!;
-                // HiveWE blight branch: skip when cliff near. We have no blight tile id
-                // in the palette path — always write ground texture (non-blight path).
-                if (CliffNear(map, i, j))
-                {
-                    // Still allow non-blight paint (HiveWE only skips when painting blight).
-                }
-                c.Blight = false;
-                c.GroundTexture = textureIndex;
-                c.GroundVariation = W3EMap.RandomGroundVariation(Random.Shared);
-            }
+            case BrushOp.WaterShallow: Water(m, cx, cy, size, 1, s.CliffTextureId); break;
+            case BrushOp.WaterDeep: Water(m, cx, cy, size, 2, s.CliffTextureId); break;
+            case BrushOp.WaterErase: break;  // 【未测】右键消水无存档对照
+            case BrushOp.Ramp: Ramp(m, cx, cy); break;
+            case BrushOp.Texture: Texture(m, cx, cy, size, shape, s); break;
+            case BrushOp.Blight: Blight(m, cx, cy, size, shape); break;
+            case BrushOp.BoundaryAdd: Boundary(m, cx, cy, size, shape, add: true); break;
+            case BrushOp.BoundaryRemove: Boundary(m, cx, cy, size, shape, add: false); break;
+            default: break;
         }
     }
 
-    private static bool CliffNear(W3EMap map, int i, int j)
+    // ================= 覆盖集合（官方 Footprint）=================
+
+    /// <summary>半径 R = size−1；圆形 dx²+dy²≤R²，方形 max(|dx|,|dy|)≤R。</summary>
+    internal static IEnumerable<(int dx, int dy)> Offsets(int size, BrushShape shape)
     {
-        for (int l = -1; l <= 1; l++)
-        for (int k = -1; k <= 1; k++)
-        {
-            int x = i + k, y = j + l;
-            if (x < 0 || y < 0 || x >= map.Width - 1 || y >= map.Height - 1) continue;
-            if (TileIsCliff(map, x, y)) return true;
-        }
-        return false;
+        int r = size - 1;
+        for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+                if (shape == BrushShape.Square || dx * dx + dy * dy <= r * r)
+                    yield return (dx, dy);
     }
 
-    private static bool TileIsCliff(W3EMap map, int i, int j)
+    private static HashSet<(int dx, int dy)> Dilate(IEnumerable<(int dx, int dy)> set)
     {
-        int bl = map.GetCorner(i, j)!.LayerHeight;
-        int br = map.GetCorner(i + 1, j)!.LayerHeight;
-        int tl = map.GetCorner(i, j + 1)!.LayerHeight;
-        int tr = map.GetCorner(i + 1, j + 1)!.LayerHeight;
-        return bl != br || bl != tl || bl != tr;
+        var o = new HashSet<(int, int)>();
+        foreach (var (dx, dy) in set)
+            for (int j = -1; j <= 1; j++)
+                for (int i = -1; i <= 1; i++)
+                    o.Add((dx + i, dy + j));
+        return o;
     }
 
-    // ---- HeightOperator ----
+    internal static double Dist(int dx, int dy) => Math.Sqrt(dx * dx + dy * dy);
 
-    private static void ApplyHeight(
-        W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, int centerX, int centerY,
-        int internalSize, BrushOp op, float frameDelta, BrushStroke stroke)
+    // ================= 高度组（流水线 ①②③④）=================
+
+    /// <summary>
+    /// ①对覆盖集合每个点算新世界高度（float32，用施加前值，先算完再写）；
+    /// ②量化 raw = trunc((world+2048)·4) 全部写回；③SlopeClamp；
+    /// ④（改动记录交给调用方自己的 dirty 跟踪）。
+    /// </summary>
+    internal static void ApplyHeight(W3EMap m, IEnumerable<(int x, int y)> cover, Func<int, int, float?> compute)
     {
-        int areaW = ar - ax;
-        int areaH = ab - ay;
-        if (op == BrushOp.Smooth)
+        var buf = new List<(int x, int y, int raw)>();
+        foreach (var (x, y) in cover)
         {
-            ApplySmoothHiveWe(map, ax, ay, ar, ab, areaW, areaH, inside);
-            return;
+            if (!Inside(m, x, y)) continue;
+            float? w = compute(x, y);
+            if (w is null) continue;
+            buf.Add((x, y, ToRawWorld(w.Value)));
         }
+        foreach (var (x, y, raw) in buf)
+            At(m, x, y).GroundHeight = ToLayers(raw);
+        if (buf.Count > 0)
+            SlopeClamp(m, buf.Select(b => (b.x, b.y)).ToList());
+    }
 
-        for (int j = ay; j < ab; j++)
+    /// <summary>
+    /// 0x57e3e0 → 0x57e600 → 0x57e440/0x57f8f0 坡度钳制。
+    /// 区间 = [MinHeight−off, MaxHeight−off] ∩ ⋂邻居 [h邻∓S]，off = (L−2)·128，下限再取 min(·,0)；
+    /// S = tan50°·128（正交）/ tan50°·181.02（对角）。MaxSlope ≥ 85 时跳过坡度部分。
+    /// 扫描：改动区包围矩形外扩一圈，x 外层 y 内层；越界夹回并递归 8 邻（深度防重入）。
+    /// 未实现：水相关下限（0x51dcb0 / 0x605fc0 / 0x605020）。
+    /// </summary>
+    internal static void SlopeClamp(W3EMap m, List<(int x, int y)> seeds)
+    {
+        if (seeds.Count == 0) return;
+        float tan = (float)Math.Tan(MaxSlopeDeg * Math.PI / 180.0);
+        var depth = new Dictionary<(int, int), int>();
+
+        void Visit(int x, int y, int d)
         {
-            for (int i = ax; i < ar; i++)
-            {
-                if (!inside(i, j)) continue;
-                var c = map.GetCorner(i, j)!;
-                switch (op)
-                {
-                    case BrushOp.Ripple:
-                        // HiveWE terrain_operators.cpp currently leaves the
-                        // ripple branch empty; preserve that authoritative
-                        // behavior until its operator gains semantics.
-                        break;
-                    case BrushOp.Raise:
-                    case BrushOp.Lower:
+            if (!Inside(m, x, y)) return;
+            if (depth.TryGetValue((x, y), out int seen) && seen <= d) return;
+            var c = At(m, x, y);
+            float off = (c.LayerHeight - 2) * 128f;
+            float hi = MaxHeightWorld - off, lo = Math.Min(MinHeightWorld - off, 0f);
+            if (MaxSlopeDeg < 85f)
+                for (int j = -1; j <= 1; j++)
+                    for (int i = -1; i <= 1; i++)
                     {
-                        // delta = max(0, 1 - distance / brush->size.x * √2) * frame_delta
-                        double distance = Math.Sqrt((centerX - i) * (centerX - i) + (centerY - j) * (centerY - j));
-                        double delta = Math.Max(0.0, 1.0 - distance / internalSize * Math.Sqrt(2.0)) * frameDelta;
-                        float h = c.GroundHeight + (float)(op == BrushOp.Raise ? delta : -delta);
-                        c.GroundHeight = Math.Clamp(h, MinHeight, MaxHeight);
-                        break;
+                        if ((i == 0 && j == 0) || !Inside(m, x + i, y + j)) continue;
+                        float s = tan * (i != 0 && j != 0 ? 181.02f : 128f);
+                        float hn = WorldOf(At(m, x + i, y + j));
+                        hi = Math.Min(hi, hn + s);
+                        lo = Math.Max(lo, hn - s);
                     }
-                    case BrushOp.Plateau:
-                        c.GroundHeight = Math.Clamp(stroke.PlateauGround, MinHeight, MaxHeight);
-                        break;
-                }
-            }
+            if (hi < lo) (lo, hi) = (hi, lo);
+            float w = WorldOf(c);
+            if (w >= lo && w <= hi) return;
+            c.GroundHeight = ToLayers(ToRawWorld(w < lo ? lo : hi));
+            depth[(x, y)] = d + 1;
+            for (int j = -1; j <= 1; j++)
+                for (int i = -1; i <= 1; i++)
+                    if (i != 0 || j != 0) Visit(x + i, y + j, d + 1);
         }
+
+        int x0 = seeds.Min(p => p.x) - 1, x1 = seeds.Max(p => p.x) + 1;
+        int y0 = seeds.Min(p => p.y) - 1, y1 = seeds.Max(p => p.y) + 1;
+        for (int x = x0; x <= x1; x++)
+            for (int y = y0; y <= y1; y++)
+                Visit(x, y, 0);
     }
 
-    private static void ApplyBoundary(
-        W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, bool add)
+    // ---------------- 升高 / 降低 ----------------
+    /// <summary>
+    /// Δworld = size·6.4·cos(π/2·d/R)，只取 d &lt; R；强制圆形（0x57e700 bVar22）。
+    /// 每次施加只加一次（不按帧累积）。量化后 +76.8→+76、−76.8→−77。
+    /// </summary>
+    internal static void RaiseLower(W3EMap m, int cx, int cy, int size, int sign)
     {
-        for (int j = ay; j < ab; j++)
-        for (int i = ax; i < ar; i++)
+        int r = size - 1;
+        ApplyHeight(m, Offsets(size, BrushShape.Circle).Select(o => (cx + o.dx, cy + o.dy)), (x, y) =>
         {
-            if (inside(i, j))
-                map.GetCorner(i, j)!.Boundary = add;
-        }
+            double d = Dist(x - cx, y - cy);
+            if (r > 0 && d >= r) return null;   // d = R 处 cos = 0
+            float f = r == 0 ? 1f : (float)Math.Cos(Math.PI * d / (2 * r));
+            return WorldOf(At(m, x, y)) + sign * size * StepWorld * f;
+        });
     }
 
-    /// <summary>HiveWE HeightOperator::smooth (ground only; deform_water default false).</summary>
-    private static void ApplySmoothHiveWe(
-        W3EMap map, int ax, int ay, int ar, int ab, int areaW, int areaH,
-        Func<int, int, bool> inside)
-    {
-        var heights = new float[areaW * areaH];
-        for (int j = ay; j < ab; j++)
-        for (int i = ax; i < ar; i++)
-            heights[(i - ax) * areaH + (j - ay)] = map.GetCorner(i, j)!.GroundHeight;
+    // ---------------- 整平 ----------------
+    /// <summary>
+    /// 覆盖集合全写 h0（按下捕获，this+0x948），无衰减，遵守形状。
+    /// 边缘一圈 h0−611 是流水线③坡度钳制的结果，不是笔刷本身。
+    /// </summary>
+    internal static void Plateau(W3EMap m, int cx, int cy, int size, BrushShape shape, float h0World)
+        => ApplyHeight(m, Offsets(size, shape).Select(o => (cx + o.dx, cy + o.dy)), (_, _) => h0World);
 
-        for (int j = ay; j < ab; j++)
+    // ---------------- 噪声 ----------------
+    /// <summary>
+    /// 0x581460：n = int(128/6.4)+1 = 21，Δ = (rand%21−10)·6.4 world，无衰减，遵守形状。
+    /// 官方随机序列不可复现（对照只比较范围+量化+分布）。
+    /// </summary>
+    internal static void Noise(W3EMap m, int cx, int cy, int size, BrushShape shape)
+        => ApplyHeight(m, Offsets(size, shape).Select(o => (cx + o.dx, cy + o.dy)), (x, y) =>
+            WorldOf(At(m, x, y)) + (Rng.Next(21) - 10) * StepWorld);
+
+    // ---------------- 平滑 ----------------
+    /// <summary>
+    /// 0x57e700 op 4：new = W1·h + W2·Σ(k·h邻)/Σk，核 [1,2,1;2,0,2;1,2,1]（中心 0），
+    /// 地图外邻居不计入 Σk；先算完再写（快照）。W1/W2 = 0.80/0.20，Shift = 1.00/0.05。
+    /// </summary>
+    internal static void Smooth(W3EMap m, int cx, int cy, int size, BrushShape shape, bool shift)
+    {
+        float w1 = shift ? 1.00f : 0.80f, w2 = shift ? 0.05f : 0.20f;
+        var kernel = new[] { 1f, 2f, 1f, 2f, 0f, 2f, 1f, 2f, 1f };
+        ApplyHeight(m, Offsets(size, shape).Select(o => (cx + o.dx, cy + o.dy)), (x, y) =>
         {
-            for (int i = ax; i < ar; i++)
-            {
-                if (!inside(i, j)) continue;
-                var c = map.GetCorner(i, j)!;
-                float current = c.GroundHeight;
-                float accumulate = 0f;
-                int x0 = Math.Max(0, i - 1), x1 = Math.Min(map.Width - 1, i + 1);
-                int y0 = Math.Max(0, j - 1), y1 = Math.Min(map.Height - 1, j + 1);
-                int cells = (x1 - x0 + 1) * (y1 - y0 + 1);
-                for (int l = y0; l <= y1; l++)
+            float sum = 0, wsum = 0;
+            for (int j = -1; j <= 1; j++)
+                for (int i = -1; i <= 1; i++)
                 {
-                    for (int k = x0; k <= x1; k++)
-                    {
-                        // HiveWE progressive scan quirk preserved 1:1
-                        if ((k < i || l < j) && k <= i
-                            && k - ax >= 0 && l - ay >= 0 && k < ar && l < ab)
-                            accumulate += heights[(k - ax) * areaH + (l - ay)];
-                        else
-                            accumulate += map.GetCorner(k, l)!.GroundHeight;
-                    }
+                    if (!Inside(m, x + i, y + j)) continue;
+                    float k = kernel[(j + 1) * 3 + (i + 1)];
+                    wsum += k;
+                    sum += WorldOf(At(m, x + i, y + j)) * k;
                 }
-                accumulate -= current;
-                float next = 0.97f * current + 0.03f * (accumulate / Math.Max(1, cells - 1));
-                c.GroundHeight = Math.Clamp(next, MinHeight, MaxHeight);
-            }
-        }
+            return sum * w2 / wsum + WorldOf(At(m, x, y)) * w1;
+        });
     }
 
-    // ---- CliffOperator ----
+    // ================= 悬崖组 =================
 
-    private static void ApplyCliffs(
-        W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, int posX, int posY, int uiSize,
-        BrushSettings s, BrushOp op, BrushStroke stroke)
+    /// <summary>
+    /// 1.27 源码 0x574470（CTerrainCliff.cpp）：
+    /// 1) T 由调用方传入（Apply 层在按下时捕获 L(中心)+Δ，this+0x94c，拖动全程用）；
+    /// 2) T &lt; 0 或 T &gt; MaxLayer → 整笔什么都不做（拒绝，不是 clamp）；
+    /// 3) 3×3 外扩染悬崖类型；覆盖集合写 L=T + 类型 + 随机变体（0x5748c0）；
+    /// 4) 层差传播（0x573950 → 0x573b40 → 0x573990）。
+    /// 未实现：按水夹层 0x5764a0（"夹后值改写 T" 怪癖）。
+    /// </summary>
+    internal static bool Cliff(W3EMap m, int cx, int cy, int size, BrushShape shape, int targetLayer, int cliffType)
     {
-        var seed = new Queue<(int X, int Y)>();
-        for (int j = ay; j < ab; j++)
+        int T = targetLayer;
+        if (T < 0 || T > MaxLayer) return false;          // 整笔拒绝【仅 1.27 源码】
+        var cover = Offsets(size, shape).ToList();
+        foreach (var (dx, dy) in Dilate(cover))
+            if (Inside(m, cx + dx, cy + dy))
+                At(m, cx + dx, cy + dy).CliffTexture = cliffType;
+        var brushed = new List<(int x, int y)>();
+        foreach (var (dx, dy) in cover)
         {
-            for (int i = ax; i < ar; i++)
-            {
-                if (!inside(i, j)) continue;
-                var c = map.GetCorner(i, j)!;
-                c.Ramp = false;
-                c.LayerHeight = stroke.TargetLayer;
-                c.CliffTexture = s.CliffTextureId;
-                switch (op)
-                {
-                    case BrushOp.WaterShallow:
-                        c.Water = true;
-                        c.WaterHeight = c.LayerHeight - 1;
-                        break;
-                    case BrushOp.WaterDeep:
-                        c.Water = true;
-                        c.WaterHeight = c.LayerHeight;
-                        break;
-                    default:
-                        if (c.Water && FinalWater(c) < FinalGround(c))
-                            c.Water = false;
-                        break;
-                }
-                seed.Enqueue((i, j));
-            }
+            int x = cx + dx, y = cy + dy;
+            if (!Inside(m, x, y)) continue;
+            var c = At(m, x, y);
+            c.LayerHeight = T;
+            c.CliffTexture = cliffType;
+            c.CliffVariation = Rng.Next(8);
+            brushed.Add((x, y));
         }
-        // HiveWE check_nearby propagation (BFS equivalent of its recursion)
-        while (seed.Count > 0)
+        Propagate(m, brushed, cliffType);
+        return true;
+    }
+
+    /// <summary>
+    /// 0x573990：改动点的 8 邻层级夹到 [L−2, L+2]（再夹 0..MaxLayer）；
+    /// 变了就同时写所选悬崖类型 + 随机变体，深度记 d+1，以邻居为中心递归。
+    /// 笔刷写过的点（深度 1）和更浅深度处理过的点不再改。
+    /// 起点：改动区包围矩形外扩一圈，x 外层 y 内层，深度 1。
+    /// </summary>
+    private static void Propagate(W3EMap m, List<(int x, int y)> brushed, int cliffType)
+    {
+        if (brushed.Count == 0) return;
+        var depth = new Dictionary<(int, int), int>();
+        foreach (var p in brushed) depth[p] = 1;
+
+        void Visit(int x, int y, int d)
         {
-            var (i, j) = seed.Dequeue();
-            PropagateCliffNearby(map, posX, posY, uiSize, s.Shape, i, j, seed);
+            int L = At(m, x, y).LayerHeight;
+            for (int i = -1; i <= 1; i++)
+                for (int j = -1; j <= 1; j++)
+                {
+                    int nx = x + i, ny = y + j;
+                    if ((i == 0 && j == 0) || !Inside(m, nx, ny)) continue;
+                    if (depth.TryGetValue((nx, ny), out int seen) && !(d < seen)) continue;
+                    var nc = At(m, nx, ny);
+                    int t = nc.LayerHeight;
+                    if (t > L + 2) t = L + 2;
+                    if (t < L - 2) t = L - 2;
+                    t = Math.Clamp(t, 0, MaxLayer);
+                    if (t == nc.LayerHeight) continue;
+                    nc.LayerHeight = t;
+                    if (cliffType != -1) nc.CliffTexture = cliffType;   // 传播点也染类型
+                    nc.CliffVariation = Rng.Next(8);
+                    depth[(nx, ny)] = d + 1;
+                    Visit(nx, ny, d + 1);
+                }
         }
 
-        // HiveWE: placing cliffs clears blight on the tile's four corners
-        int ex0 = Math.Max(0, ax - 1), ey0 = Math.Max(0, ay - 1);
-        int ex1 = Math.Min(map.Width - 2, ar), ey1 = Math.Min(map.Height - 2, ab);
-        for (int i = ex0; i <= ex1; i++)
+        int x0 = brushed.Min(p => p.x) - 1, x1 = brushed.Max(p => p.x) + 1;
+        int y0 = brushed.Min(p => p.y) - 1, y1 = brushed.Max(p => p.y) + 1;
+        for (int x = x0; x <= x1; x++)
+            for (int y = y0; y <= y1; y++)
+                if (Inside(m, x, y)) Visit(x, y, 1);
+    }
+
+    // ---------------- 浅水 / 深水 ----------------
+    /// <summary>
+    /// 1.27 源码 0x603cc0（CTerrainWater.cpp）：水笔刷 = 写水 + 整平 + 悬崖，三步复用流水线。
+    /// 1) 点击点 c：干地 Δ = −depth；已有水 Δ = floor((水面−地面总高)/128)（水面含偏移，
+    ///    深水再减 DeepExtra），水面值 = 现有水面；干地水面值 = c 的地面总高；
+    /// 2) 覆盖集合（圆）设水旗；水面高度写 3×3 外扩（外扩一圈为 1.32 存档实测）；
+    /// 3) 整平 op 2，尺寸 size+2，值 h0（走流水线，陡坡上会被坡度钳制）；
+    /// 4) 悬崖笔刷，尺寸 size，目标 T（越界整笔拒绝、传播、染类型全部生效）。
+    /// </summary>
+    internal static void Water(W3EMap m, int cx, int cy, int size, int depth, int cliffType)
+    {
+        var c = At(m, cx, cy);
+        int dL;
+        float waterWh;   // 写入 WaterHeight 字段的值（层分数）
+        float offW = m.Tileset == 'A' ? WaterOffsetWorldA : WaterOffsetWorldL;
+        if (!c.Water)
         {
-            for (int j = ey0; j <= ey1; j++)
-            {
-                if (!TileIsCliff(map, i, j)) continue;
-                map.GetCorner(i, j)!.Blight = false;
-                map.GetCorner(i + 1, j)!.Blight = false;
-                map.GetCorner(i, j + 1)!.Blight = false;
-                map.GetCorner(i + 1, j + 1)!.Blight = false;
-            }
+            dL = -depth;
+            waterWh = c.GroundHeight + c.LayerHeight - 2f;   // 地面总高（= c.Height + (L−2)·512 的层分数）
+        }
+        else
+        {
+            float surf = c.WaterHeight * 128f + offW - (depth == 2 ? DeepExtraWorld : 0f);
+            float g = c.GroundHeight * 128f + (c.LayerHeight - 2) * 128f;
+            dL = (int)((surf - g) / 128f);
+            if (surf < g) dL -= 1;
+            waterWh = c.WaterHeight;
+        }
+        int T = c.LayerHeight + dL;
+        float h0 = WorldOf(c);   // 整平步要的是世界单位（参考实现 h0 = World(c.Height)）
+        var cover = Offsets(size, BrushShape.Circle).ToList();
+        foreach (var (dx, dy) in Dilate(cover))
+            if (Inside(m, cx + dx, cy + dy))
+                At(m, cx + dx, cy + dy).WaterHeight = waterWh;
+        foreach (var (dx, dy) in cover)
+            if (Inside(m, cx + dx, cy + dy))
+                At(m, cx + dx, cy + dy).Water = true;
+        Plateau(m, cx, cy, size + 2, BrushShape.Circle, h0);
+        Cliff(m, cx, cy, size, BrushShape.Circle, T, cliffType);
+    }
+
+    // ---------------- 坡道 ----------------
+    /// <summary>
+    /// 0x583310/0x584270：只响应点击角点（低地角点 c）：
+    /// · 4 邻恰有一个高 1 层 → 写 3 角：c 外侧一个、c、高侧一个；
+    /// · 无 4 邻更高、恰有一个斜邻高 1 层（台地凸角）→ 以 c 为中心 3×3；
+    /// · 层差 2 或点在高处 → 什么都不做（实测 58 个位置全部无变化）。
+    /// 层级不变，只写 ramp 标志。
+    /// </summary>
+    internal static void Ramp(W3EMap m, int cx, int cy)
+    {
+        int L = At(m, cx, cy).LayerHeight;
+        var dirs4 = new[] { (1, 0), (-1, 0), (0, 1), (0, -1) };
+        var high4 = dirs4.Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1).ToList();
+        bool anyHigher4 = dirs4.Any(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight > L);
+        if (high4.Count == 1)
+        {
+            var (dx, dy) = high4[0];
+            foreach (int t in new[] { -1, 0, 1 })
+                if (Inside(m, cx + t * dx, cy + t * dy))
+                    At(m, cx + t * dx, cy + t * dy).Ramp = true;
+            return;
+        }
+        if (anyHigher4) return;
+        var diag = new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) }
+            .Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1)
+            .ToList();
+        if (diag.Count == 1)
+            for (int j = -1; j <= 1; j++)
+                for (int i = -1; i <= 1; i++)
+                    if (Inside(m, cx + i, cy + j))
+                        At(m, cx + i, cy + j).Ramp = true;
+    }
+
+    // ================= 纹理组 =================
+
+    /// <summary>
+    /// 覆盖集合（遵守形状）写纹理下标 + 重随变体：约 91% 落 {0,4,8,12,16,17}，
+    /// 其余均匀 1..15（12.10）。官方不清 blight（与旧 HiveWE 版不同）。
+    /// 1.27 写入函数未定位（仅 1.32 存档 51/51 覆盖范围验证）。
+    /// </summary>
+    internal static void Texture(W3EMap m, int cx, int cy, int size, BrushShape shape, BrushSettings s)
+    {
+        var common = new[] { 0, 4, 8, 12, 16, 17 };
+        foreach (var (dx, dy) in Offsets(size, shape))
+        {
+            int x = cx + dx, y = cy + dy;
+            if (!Inside(m, x, y)) continue;
+            var c = At(m, x, y);
+            c.GroundTexture = s.TextureIndex;
+            c.GroundVariation = Rng.NextDouble() < 0.91 ? common[Rng.Next(common.Length)] : Rng.Next(1, 16);
         }
     }
 
     /// <summary>
-    /// One step of HiveWE <c>CliffOperator::check_nearby</c>.
-    /// Contains skip uses HiveWE's coordinates as written (incl. <c>l-k</c>).
+    /// 覆盖集合（遵守形状）写 blight 旗（水角点不接收，实测点水中心无变化）。
+    /// 官方还会在外围约 R+2 内随机改一部分贴图（不规则边缘，实测 1.32；
+    /// 1.27 写入函数未定位，贴图取值细节未验证，这里按参考实现演示参数）。
     /// </summary>
-    private static void PropagateCliffNearby(
-        W3EMap map, int begx, int begy, int uiSize, BrushShape shape,
-        int i, int j, Queue<(int X, int Y)> outQueue)
+    internal static void Blight(W3EMap m, int cx, int cy, int size, BrushShape shape)
     {
-        int x0 = Math.Max(0, i - 1), x1 = Math.Min(map.Width - 1, i + 1);
-        int y0 = Math.Max(0, j - 1), y1 = Math.Min(map.Height - 1, j + 1);
-        int srcLayer = map.GetCorner(i, j)!.LayerHeight;
-        int cliffTex = map.GetCorner(i, j)!.CliffTexture;
-        for (int l = y0; l <= y1; l++)
+        foreach (var (dx, dy) in Offsets(size, shape))
         {
-            for (int k = x0; k <= x1; k++)
-            {
-                map.GetCorner(k, l)!.CliffTexture = cliffTex;
-                if (k == 0 && l == 0) continue;
-
-                int difference = srcLayer - map.GetCorner(k, l)!.LayerHeight;
-                int containsX = begx + (k - i);
-                int containsY = begy + (l - k);
-                if (Math.Abs(difference) > 2 && !Contains(containsX, containsY, uiSize, shape))
-                {
-                    var c = map.GetCorner(k, l)!;
-                    int next = Math.Clamp(srcLayer - Math.Clamp(difference, -2, 2), 0, MaxLayer);
-                    if (c.LayerHeight == next && !c.Ramp) continue;
-                    c.LayerHeight = next;
-                    c.Ramp = false;
-                    outQueue.Enqueue((k, l));
-                }
-            }
+            int x = cx + dx, y = cy + dy;
+            if (Inside(m, x, y) && !At(m, x, y).Water)
+                At(m, x, y).Blight = true;
         }
+        int r = size + 1;   // 官方外围约 R+2（R = size−1）
+        for (int dy = -r; dy <= r; dy++)
+            for (int dx = -r; dx <= r; dx++)
+                if (Inside(m, cx + dx, cy + dy) && Rng.NextDouble() < 0.3)
+                    At(m, cx + dx, cy + dy).GroundTexture = 1;   // 与参考实现一致（贴图取值细节未验证）
     }
 
-    private static void ApplyWaterErase(
-        W3EMap map, int ax, int ay, int ar, int ab, Func<int, int, bool> inside)
+    /// <summary>放置/移除边界：只改 boundary 旗，其余字段不动（1.32 实测 13/13）。</summary>
+    internal static void Boundary(W3EMap m, int cx, int cy, int size, BrushShape shape, bool add)
     {
-        for (int j = ay; j < ab; j++)
-        for (int i = ax; i < ar; i++)
+        foreach (var (dx, dy) in Offsets(size, shape))
         {
-            if (!inside(i, j)) continue;
-            var c = map.GetCorner(i, j)!;
-            c.Water = false;
-            c.WaterHeight = 0f;
-        }
-    }
-
-    // ---- ramps ----
-
-    private static void ApplyRamps(
-        W3EMap map, int ax, int ay, int ar, int ab,
-        Func<int, int, bool> inside, float mouseCx, float mouseCy)
-    {
-        // HiveWE: horizontal = (mouse_pos.x > i) - (mouse_pos.x < i)
-        for (int j = ay; j < ab; j++)
-        for (int i = ax; i < ar; i++)
-        {
-            if (!inside(i, j)) continue;
-            int horizontal = (mouseCx > i ? 1 : 0) - (mouseCx < i ? 1 : 0);
-            int vertical = (mouseCy > j ? 1 : 0) - (mouseCy < j ? 1 : 0);
-            UpdateRamp(map, i, j, horizontal, vertical);
-        }
-    }
-
-    private static void ApplyRampErase(
-        W3EMap map, int ax, int ay, int ar, int ab, Func<int, int, bool> inside)
-    {
-        for (int j = ay; j < ab; j++)
-        for (int i = ax; i < ar; i++)
-        {
-            if (!inside(i, j)) continue;
-            map.GetCorner(i, j)!.Ramp = false;
-        }
-    }
-
-    /// <summary>HiveWE <c>CliffOperator::update_ramp</c>.</summary>
-    private static void UpdateRamp(W3EMap map, int i, int j, int horizontal, int vertical)
-    {
-        var origin = map.GetCorner(i, j);
-        if (origin == null) return;
-        int originLevel = origin.LayerHeight;
-        int targetLevel = originLevel - 1;
-        int cliffTex = origin.CliffTexture;
-
-        int Layer(int x, int y) => map.GetCorner(x, y)?.LayerHeight ?? int.MinValue;
-        bool RampAt(int x, int y) => map.GetCorner(x, y)?.Ramp ?? false;
-        bool Valid(int x, int y) =>
-            x >= 0 && x < map.Width && y >= 0 && y < map.Height
-            && map.GetCorner(x, y)!.LayerHeight == targetLevel;
-
-        bool CheckRampDirection(int dirX, int dirY)
-        {
-            if (i + 2 * dirX < 0 || i + 2 * dirX > map.Width || j + 2 * dirY < 0 || j + 2 * dirY > map.Height)
-                return false;
-            for (int step = 1; step <= 2; step++)
-                if (!Valid(i + step * dirX, j + step * dirY))
-                    return false;
-            if (Layer(i + dirY, j + dirX) > originLevel || Layer(i - dirY, j - dirX) > originLevel)
-                return false;
-            foreach (int side in new[] { -1, 1 })
-            {
-                if (RampAt(i, j + side)
-                    && (!RampAt(i + dirX, j + side + dirY) || !RampAt(i + 2 * dirX, j + side + 2 * dirY)))
-                    return false;
-                if (RampAt(i + side, j)
-                    && (!RampAt(i + side + dirX, j + dirY) || !RampAt(i + side + 2 * dirX, j + 2 * dirY)))
-                    return false;
-            }
-            return true;
-        }
-
-        bool allowH = horizontal != 0 && CheckRampDirection(horizontal, 0);
-        bool allowV = vertical != 0 && CheckRampDirection(0, vertical);
-        bool allowD = horizontal != 0 && vertical != 0;
-        for (int dx = 0; dx <= 2 && allowD; dx++)
-        for (int dy = 0; dy <= 2 && allowD; dy++)
-            if ((dx != 0 || dy != 0) && !Valid(i + dx * horizontal, j + dy * vertical))
-                allowD = false;
-
-        void SetRamp(int x, int y)
-        {
-            var c = map.GetCorner(x, y);
-            if (c == null) return;
-            c.Ramp = true;
-            c.CliffTexture = cliffTex;
-        }
-
-        if (allowH)
-            for (int step = 0; step <= 2; step++)
-                SetRamp(i + step * horizontal, j);
-        if (allowV)
-            for (int step = 0; step <= 2; step++)
-                SetRamp(i, j + step * vertical);
-        if (allowD)
-            for (int dx = 0; dx <= 2; dx++)
-            for (int dy = 0; dy <= 2; dy++)
-                SetRamp(i + dx * horizontal, j + dy * vertical);
-
-        // HiveWE L-corner completion adds only the flag. These corners keep
-        // their own authored cliff texture (sealed ground-texture ownership).
-        if (allowH || allowD)
-        {
-            if (Valid(i + horizontal, j + 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
-                && RampAt(i, j + 1) && RampAt(i, j + 2))
-                map.GetCorner(i + horizontal, j + 1)!.Ramp = true;
-            if (Valid(i + horizontal, j - 1) && RampAt(i, j) && RampAt(i + 1, j) && RampAt(i + 2, j)
-                && RampAt(i, j - 1) && RampAt(i, j - 2))
-                map.GetCorner(i + horizontal, j - 1)!.Ramp = true;
-        }
-        if (allowV || allowD)
-        {
-            if (Valid(i + 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
-                && RampAt(i + 1, j) && RampAt(i + 2, j))
-                map.GetCorner(i + 1, j + vertical)!.Ramp = true;
-            if (Valid(i - 1, j + vertical) && RampAt(i, j) && RampAt(i, j + 1) && RampAt(i, j + 2)
-                && RampAt(i - 1, j) && RampAt(i - 2, j))
-                map.GetCorner(i - 1, j + vertical)!.Ramp = true;
+            int x = cx + dx, y = cy + dy;
+            if (Inside(m, x, y))
+                At(m, x, y).Boundary = add;
         }
     }
 }

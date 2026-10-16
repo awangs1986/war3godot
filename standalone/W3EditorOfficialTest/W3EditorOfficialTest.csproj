@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 无头验证 harness：用官方 1.32 存档 fixture 逐角点对照 TerrainBrush（官方 1:1 版）。
+       期望值 = docs/terrain-reference 参考实现 results.md 的逐用例数字。
+       运行：dotnet run（项目 standalone/W3EditorOfficialTest），参数 = terrain-reference 目录
+       （该目录含 cases.json + fixtures/*.w3e + results.md） -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>W3Editor.OfficialTest</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\W3Editor.Core\W3Editor.Core.csproj" />
+  </ItemGroup>
+
+</Project>
