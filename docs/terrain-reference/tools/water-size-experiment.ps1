@@ -83,9 +83,17 @@ ClickAt $PX $PY; Start-Sleep -Milliseconds 1200
 
 # 单次另存为
 # ---- 另存为（Reforged = Vista 对话框：WM_SETTEXT 无效，且整条路径会被 IME 转换 ⇒ 只打 ASCII 文件名）----
+function Shot([string]$path) {
+  Add-Type -AssemblyName System.Drawing, System.Windows.Forms -ErrorAction SilentlyContinue
+  $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($b.X, $b.Y, 0, 0, $bmp.Size); $g.Dispose()
+  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+}
 $basename = [IO.Path]::GetFileName($Out)
 [U]::SetForegroundWindow($hMain) | Out-Null; Start-Sleep -Milliseconds 400
-[System.Windows.Forms.SendKeys]::SendWait("^s"); Start-Sleep -Seconds 3
+[System.Windows.Forms.SendKeys]::SendWait("^s"); Start-Sleep -Seconds 3; Shot "D:\tools\exp\watersize\shot_after_ctrls.png"
 for ($r = 0; $r -lt 4; $r++) {
   $ds = [U]::Top($Pid0) | Where-Object { $_ -match '#32770' -and $_ -notmatch '工具面板|进程' }
   if (-not $ds) { break }
@@ -106,9 +114,17 @@ if ($dlg) {
   ClickAt ([int]$dr[0] + [int]$er[0] + 4) ([int]$dr[1] + [int]$er[1] + 6)
   Start-Sleep -Milliseconds 400
   [System.Windows.Forms.SendKeys]::SendWait("^a"); Start-Sleep -Milliseconds 150
-  [System.Windows.Forms.SendKeys]::SendWait($basename); Start-Sleep -Milliseconds 500
-  $sv = $k2 | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '保存' } | Select-Object -First 1
-  ClickButton (HwndOf $sv); Start-Sleep -Seconds 4
+  [System.Windows.Forms.SendKeys]::SendWait($basename); Start-Sleep -Milliseconds 400; [System.Windows.Forms.SendKeys]::SendWait("{ENTER}"); Start-Sleep -Seconds 1
+  # 保存按钮实际在屏幕外（控件 rect 与真实对话框不一致）⇒ 用文件名框的 Enter 提交
+  Start-Sleep -Milliseconds 300
+  [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+  Start-Sleep -Seconds 4
+  Shot "D:\tools\exp\watersize\shot_after_enter.png"
+  # 若对话框仍在，再试一次点击（兜底）
+  $dlg2 = [U]::Top($Pid0) | Where-Object { $_ -match '另存为' } | Select-Object -First 1
+  if ($dlg2) {
+    [System.Windows.Forms.SendKeys]::SendWait("{ENTER}"); Start-Sleep -Seconds 3
+  }
 }
 Get-Process -Id $Pid0 -ErrorAction SilentlyContinue | Stop-Process -Force
 $found = Get-ChildItem "D:\tools\exp" -Recurse -Filter $basename -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
