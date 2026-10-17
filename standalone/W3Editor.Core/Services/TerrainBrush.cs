@@ -578,7 +578,13 @@ public static class TerrainBrush
     /// 0x40 水、0x80 边界；byte5=地表变体/悬崖变体；byte6=层级/悬崖类型）后，
     /// 四份存档的 **blight 计数均为 0**，那几笔实际只改了 tex/groundVar/layer/cliffVar/cliffType。
     /// 见 `docs/terrain-reference/experiments/CORRECTIONS.md`。
-    /// 在拿到"先荒芜→同角点异纹理覆盖"且证明落笔集合与荒芜集合重叠的官方存档之前，此处不写 blight。
+    /// **B 级结论（反编译，逐行可核）**：纹理笔刷**不触碰荒芜位**。
+    /// `ghidra_286a60.c:174` → `auStack_d0[8] = … ^ (… ^ auStack_d0[8]) & 0xf`（只写低 4 位=纹理索引，
+    /// 0x10 坡道 / 0x20 荒芜 / 0x40 水 / 0x80 边界 四位原样保留）；
+    /// `:183/:188` → `auStack_d0[9] = … & 0x1f`（只写低 5 位=地表变体，高 3 位悬崖变体保留）；
+    /// `:192` → `auStack_d0._12_2_ &= uVar6`（掩码 `0xffbf`/`0xfffb` 作用在**字节 12**＝NOTH 标志字节，
+    /// 不是 byte4；旧结论把字节与位都认错了）。
+    /// 因此本实现**不写** blight，与 B 级证据一致；A 级（真机"荒芜→纹理覆盖"存档）仍待补。
     /// </summary>
     internal static void Texture(W3EMap m, int cx, int cy, int size, BrushShape shape, BrushSettings s)
     {
