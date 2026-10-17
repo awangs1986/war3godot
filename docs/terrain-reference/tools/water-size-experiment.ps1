@@ -38,41 +38,42 @@ $hMain = HwndOf $os
 
 $hPal = HwndOf ([U]::Top($Pid0) | Where-Object { $_ -match '工具面板' } | Select-Object -First 1)
 if (-not $hPal) { Write-Host "FAILED: 无工具面板"; exit 1 }
-$lbls = @{}
-foreach ($x in [U]::Kids($hPal)) {
-  $p = $x -split '\|'
-  if ($p[2] -match '^应用悬崖') { $lbls['clf'] = [int64]$p[0] }
-  if ($p[2] -match '^尺寸') { $lbls['size'] = [int64]$p[0] }
-  if ($p[2] -match '^形状') { $lbls['shape'] = [int64]$p[0] }
+$cands = [U]::Kids($hPal) | ForEach-Object {
+  $p = $_ -split '\|'; $r = $p[3] -split ','
+  [pscustomobject]@{ H = [int64]$p[0]; Cls = $p[1]; Lbl = $p[2]; X = [int]$r[0]; Y = [int]$r[1] }
 }
-function Buttons { [U]::Kids($hPal) | Where-Object { $p = $_ -split '\|'; if ($p[1] -ne 'Button') { return $false }; $r = $p[3] -split ','; ([int]$r[0] -ge 500 -and [int]$r[1] -ge 200) } }
+$lbls = @{}
+$lbls['clf']   = ($cands | Where-Object { $_.Lbl -match '^应用悬崖' } | Select-Object -First 1).H
+$lbls['size']  = ($cands | Where-Object { $_.Lbl -match '^尺寸' } | Sort-Object Y | Select-Object -First 1).H
+$lbls['shape'] = ($cands | Where-Object { $_.Lbl -match '^形状' } | Sort-Object Y | Select-Object -First 1).H
+# 地形面板的尺寸按钮：y 在 717..749 的 5 个未标注按钮（按 x 排序 = 尺寸 1..5）
+$sizeBtns  = $cands | Where-Object { $_.Cls -eq 'Button' -and $_.Y -ge 717 -and $_.Y -le 749 } | Sort-Object X
+# 形状按钮：y 在 779..811 的 2 个（第一个 = 圆形）
+$shapeBtns = $cands | Where-Object { $_.Cls -eq 'Button' -and $_.Y -ge 779 -and $_.Y -le 811 } | Sort-Object X
+function Buttons { $cands | Where-Object { $_.Cls -eq 'Button' -and $_.X -ge 500 -and $_.Y -ge 200 } }
 function PickAx([string]$axis, [string]$want) {
-  foreach ($x in (Buttons)) {
-    $h = [int64](($x -split '\|')[0]); $b = L $lbls[$axis]
-    [WS]::SendMessage([IntPtr]$h, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 140
+  foreach ($c in (Buttons)) {
+    $h = [int64]$c.H; $b = L $lbls[$axis]
+    [WS]::SendMessage([IntPtr]$h, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    Start-Sleep -Milliseconds 150
     if ((L $lbls[$axis]) -ne $b -and (L $lbls[$axis]) -match $want) { return $h }
   }
   return 0
 }
 # 顺序：尺寸 / 形状 先设，笔刷最后选（否则会被覆盖回"没有"）
-# 尺寸：改用面板上的 updown 控件点"上箭头"逐步加（尺寸按钮组不在 x>=500 区域内）
-$ud = [U]::Kids($hPal) | Where-Object { ($_ -split '\|')[1] -eq 'msctls_updown32' } | Select-Object -First 1
-if ($ud) {
-  $uh = HwndOf $ud
-  $cur = 1
-  if ((L $lbls['size']) -match '(\d+)') { $cur = [int]$Matches[1] }
-  for ($k = $cur; $k -lt $Size; $k++) {
-    [WS]::SendMessage([IntPtr]$uh, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null   # WM_COMMAND SB_LINEUP 的等效点击
-    Start-Sleep -Milliseconds 200
-    [WS]::SendMessage([IntPtr]$uh, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-    Start-Sleep -Milliseconds 250
-  }
-  Write-Host ("  尺寸(updown 点击后): '{0}'" -f (L $lbls['size']))
-} else {
-  Write-Host "  WARN: 未找到 updown 控件"
-}
-$hShape = PickAx 'shape' '圆形'
-Write-Host ("  形状: {0} → '{1}'" -f $hShape, (L $lbls['shape']))
+# 尺寸/形状：直接点对应按钮（尺寸按钮 y=717..749 共 5 个，按 x 排序对应 1..5）
+if ($sizeBtns -and $sizeBtns.Count -ge $Size) {
+  $hS = $sizeBtns[$Size - 1].H
+  [WS]::SendMessage([IntPtr][int64]$hS, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+  Start-Sleep -Milliseconds 400
+  Write-Host ("  尺寸按钮[{0}] → 标签 '{1}'" -f $Size, (L $lbls['size']))
+} else { Write-Host "  WARN: 尺寸按钮不足" }
+if ($shapeBtns -and $shapeBtns.Count -ge 1) {
+  $hShape2 = $shapeBtns[0].H
+  [WS]::SendMessage([IntPtr][int64]$hShape2, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+  Start-Sleep -Milliseconds 400
+  Write-Host ("  形状按钮[0] → 标签 '{0}'" -f (L $lbls['shape']))
+} else { Write-Host "  WARN: 形状按钮不足" }
 $hUp = PickAx 'clf' '升高一层'
 Write-Host ("  升高一层: {0} → '{1}'" -f $hUp, (L $lbls['clf']))
 ClickAt $PX $PY; Start-Sleep -Milliseconds 900
@@ -81,26 +82,38 @@ Write-Host ("  深水: {0} → '{1}'" -f $hW, (L $lbls['clf']))
 ClickAt $PX $PY; Start-Sleep -Milliseconds 1200
 
 # 单次另存为
-[U]::PostMessage([IntPtr][int64](Get-Process -Id $Pid0).MainWindowHandle, 0x0111, [IntPtr]5, [IntPtr]::Zero) | Out-Null
-Start-Sleep -Seconds 2
-for ($round = 0; $round -lt 6; $round++) {
+# ---- 另存为（Reforged = Vista 对话框：WM_SETTEXT 无效，且整条路径会被 IME 转换 ⇒ 只打 ASCII 文件名）----
+$basename = [IO.Path]::GetFileName($Out)
+[U]::SetForegroundWindow($hMain) | Out-Null; Start-Sleep -Milliseconds 400
+[System.Windows.Forms.SendKeys]::SendWait("^s"); Start-Sleep -Seconds 3
+for ($r = 0; $r -lt 4; $r++) {
   $ds = [U]::Top($Pid0) | Where-Object { $_ -match '#32770' -and $_ -notmatch '工具面板|进程' }
   if (-not $ds) { break }
   foreach ($d in $ds) {
     $title = ($d -split '\|')[2]; $k = [U]::Kids((HwndOf $d))
     $btns = $k | Where-Object { ($_ -split '\|')[1] -eq 'Button' } | ForEach-Object { ($_ -split '\|')[2] } | Where-Object { $_ }
-    if ($title -match '另存为') {
-      $edits = $k | Where-Object { ($_ -split '\|')[1] -eq 'Edit' } | ForEach-Object { $p = $_ -split '\|'; $r = $p[3] -split ','; [pscustomobject]@{ H = [int64]$p[0]; Top = [int]$r[1] } } | Sort-Object Top
-      $sv = $k | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '保存' } | Select-Object -First 1
-      SetEdit ([IntPtr](($edits | Where-Object { $_.Top -gt 300 } | Select-Object -First 1).H)) $Out; Start-Sleep -Milliseconds 700
-      ClickButton (HwndOf $sv); Start-Sleep -Seconds 3
-    } elseif ($btns -match '是' -and $btns -match '否') { $y = $k | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '^是' } | Select-Object -First 1; ClickButton (HwndOf $y); Start-Sleep -Seconds 2 }
+    if ($title -match '另存为') { break }
+    if ($btns -match '是' -and $btns -match '否') { $y = $k | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '^是' } | Select-Object -First 1; ClickButton (HwndOf $y); Start-Sleep -Seconds 2 }
     elseif ($btns -match '确定') { $o = $k | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '确定' } | Select-Object -First 1; ClickButton (HwndOf $o); Start-Sleep -Seconds 2 }
   }
 }
+$dlg = [U]::Top($Pid0) | Where-Object { $_ -match '另存为' } | Select-Object -First 1
+if ($dlg) {
+  $dr = ($dlg -split '\|')[3] -split ','
+  $k2 = [U]::Kids((HwndOf $dlg))
+  $ed = $k2 | Where-Object { ($_ -split '\|')[1] -eq 'Edit' } | Select-Object -First 1
+  $er = ($ed -split '\|')[3] -split ','
+  ClickAt ([int]$dr[0] + [int]$er[0] + 4) ([int]$dr[1] + [int]$er[1] + 6)
+  Start-Sleep -Milliseconds 400
+  [System.Windows.Forms.SendKeys]::SendWait("^a"); Start-Sleep -Milliseconds 150
+  [System.Windows.Forms.SendKeys]::SendWait($basename); Start-Sleep -Milliseconds 500
+  $sv = $k2 | Where-Object { ($_ -split '\|')[1] -eq 'Button' -and ($_ -split '\|')[2] -match '保存' } | Select-Object -First 1
+  ClickButton (HwndOf $sv); Start-Sleep -Seconds 4
+}
 Get-Process -Id $Pid0 -ErrorAction SilentlyContinue | Stop-Process -Force
-if (-not (Test-Path $Out)) { Write-Host "FAILED: 未生成 $Out"; exit 1 }
-"OK: $Out  size=$((Get-Item $Out).Length)"
-$w3e = [IO.Path]::ChangeExtension($Out, '.w3e')
-& $python -c "import mpyq; a=mpyq.MPQArchive(r'$Out',listfile=False); open(r'$w3e','wb').write(a.read_file(b'war3map.w3e'))" 2>$null
-"w3e: $w3e  $((Get-Item $w3e).Length) B"
+$found = Get-ChildItem "D:\tools\exp" -Recurse -Filter $basename -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $found) { Write-Host "FAILED: no-output ($basename)"; exit 1 }
+"OK: $($found.FullName)  size=$($found.Length)"
+$w3e = [IO.Path]::ChangeExtension($found.FullName, '.w3e')
+& $python -c "import mpyq; a=mpyq.MPQArchive(r'$($found.FullName)',listfile=False); open(r'$w3e','wb').write(a.read_file(b'war3map.w3e'))" 2>$null
+if (Test-Path $w3e) { "w3e: $w3e  $((Get-Item $w3e).Length) B" } else { "w3e 抽取失败" }
