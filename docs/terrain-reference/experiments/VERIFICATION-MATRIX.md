@@ -1,5 +1,11 @@
 # 1.32 验证矩阵（PR #1–#5 断言复核）
 
+> [!WARNING] 本文件含**已作废结论**
+> 文中「纹理刷清 blight（0xfffb）」与「荒芜位 = byte5 bit2+bit3」两处**已撤回**。
+> 依据：CORRECTIONS.md §1 / §12 —— 权威字段表下 D0/D3/D5/D6 的 blight 计数均为 0；
+> ghidra_286a60.c:174/183/188 显示纹理刷只写 byte8 & 0xf 与 byte9 & 0x1f；
+> 0xffbf/0xfffb 作用在**字节 12**（NOTH 标志）而非 byte4。
+
 > 依据 `AGENTS.md` 的 Evidence discipline：每条结论必须有实测数据或可复核产物；
 > 证据分级沿用三层：**A 官方存档已验证 / B 反编译·反汇编支持 / C 实现自检**。
 > 本文件的"状态"只描述**证据强度**，不描述实现正确性。
