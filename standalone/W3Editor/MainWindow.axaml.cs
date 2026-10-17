@@ -622,6 +622,12 @@ public partial class MainWindow : Window
         if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
 
         _strokeErase = props.IsRightButtonPressed;
+        // Shift 语义（任务 6）：坡道笔刷下 Shift = **移除**（官方实测 R23：同组 ramp 旗 1→0）。
+        // 因此坡道时 Shift 不再兼作"直线约束"（冲突已在此消解）；其它笔刷保持原有直线约束语义。
+        {
+            bool shiftDown = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+            _brush.Shift = shiftDown && _brush.Op == BrushOp.Ramp;
+        }
         _stroke = new BrushStroke();
         _strokeApplied = false;
         _strokeAnchor = ((int)cx, (int)cy);
@@ -655,7 +661,7 @@ public partial class MainWindow : Window
         if (_stroke == null) return;
         if (!TryPointToBrushPosition(e.GetPosition(ViewportImage), out float cx, out float cy)) return;
         (cx, cy) = _brush.Op == BrushOp.Ramp
-            ? ConstrainRampToLine(cx, cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            ? (cx, cy)   // 坡道：Shift = 移除（官方 R23），此处不作直线约束
             : ConstrainToLine((int)cx, (int)cy, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
         // HiveWE：每次 move 都 apply(frame_delta)，不按格插值
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
@@ -679,6 +685,7 @@ public partial class MainWindow : Window
         if (_stroke == null) return;
         var map = _session.Map!;
         _history.CommitStroke(map);
+        _brush.Shift = false;   // 笔画结束复位修饰键状态（避免"移除模式"粘住）
         _stroke = null;
         if (_strokeApplied)
         {
@@ -946,7 +953,7 @@ public partial class MainWindow : Window
             return;
         }
         (cx, cy) = _brush.Op == BrushOp.Ramp
-            ? ConstrainRampToLine(cx, cy, GlView.StrokeShift)
+            ? (cx, cy)   // 坡道：Shift = 移除，不作直线约束
             : ConstrainToLine((int)cx, (int)cy, GlView.StrokeShift);
         ApplyBrushAt(cx, cy, ConsumeFrameDelta());
     }
@@ -960,6 +967,7 @@ public partial class MainWindow : Window
         if (_stroke == null) return;
         var map = _session.Map!;
         _history.CommitStroke(map);
+        _brush.Shift = false;   // 笔画结束复位修饰键状态（避免"移除模式"粘住）
         _stroke = null;
         if (_strokeApplied)
         {
@@ -2061,6 +2069,7 @@ public partial class MainWindow : Window
             for (int i = 0; i < steps; i++)
                 TerrainBrush.Apply(map, cx + i * dx, cy + i * dy, _brush, erase: false, _stroke, frameDelta: 0.5f);
             _history.CommitStroke(map);
+            _brush.Shift = false;   // 笔画结束复位修饰键状态（避免"移除模式"粘住）
             _stroke = null;
         }
 
@@ -2141,6 +2150,7 @@ public partial class MainWindow : Window
                 TerrainBrush.Apply(map, cx + i * dx, cy, _brush, erase: false, _stroke,
                     frameDelta: i == 0 ? 0.5f : Math.Clamp(strength, 0.01f, 1f));
             _history.CommitStroke(map);
+            _brush.Shift = false;   // 笔画结束复位修饰键状态（避免"移除模式"粘住）
             _stroke = null;
         }
 

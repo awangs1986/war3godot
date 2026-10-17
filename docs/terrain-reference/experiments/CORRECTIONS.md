@@ -250,3 +250,47 @@ Cliff(m, cx, cy, size, BrushShape.Circle, T, cliffType, randomizeVariation: fals
    ⇒ 修复是**真实**的，不是被允许列表掩盖 ✓
 
 （悬崖刷本身仍随机变体 —— 这是官方行为，`CliffVariation` 的两处写入保留 ✓）
+
+---
+
+## 9. 任务 6：UI 侧 Shift / 右键接线（本轮）
+
+### 9.1 缺口（修复前）
+
+`MainWindow.ApplyBrushAt` 直接把持久化的 `_brush` 传给 `TerrainBrush.Apply(...)`，但 **`_brush.Shift` 从未由输入设置** ✗
+⇒ UI 上按 Shift 对坡道**完全无效**（算法层 `case BrushOp.Ramp: Ramp(m, cx, cy, s.Shift)` 早已就绪 ✓，
+`Y10_ramp_made → Y10_ramp_shift` 的算法级用例 9/9 ✓）。右键则已接到 `_strokeErase = props.IsRightButtonPressed` ✓
+（`Reverse(Ramp)=Ramp` ⇒ 坡道右键 = 再施加，落在已置位角点上无变化，与官方 `Y10_ramp_right` 差 0 一致 ✓）。
+
+### 9.2 修复（含冲突消解）
+
+1. **按下时捕获修饰键**（`OnViewportPressed`）：
+   ```csharp
+   bool shiftDown = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+   _brush.Shift = shiftDown && _brush.Op == BrushOp.Ramp;   // 只对坡道生效
+   ```
+2. **冲突消解**：Shift 原用于"直线笔刷约束"（`ConstrainToLine` / `ConstrainRampToLine`）。
+   官方实测（R23）里 Shift+坡道 = **移除**，因此坡道笔刷下 Shift **不再**作直线约束：
+   ```csharp
+   (cx, cy) = _brush.Op == BrushOp.Ramp
+       ? (cx, cy)                                    // 坡道：Shift = 移除
+       : ConstrainToLine((int)cx, (int)cy, shift);
+   ```
+   2D（原 :663）与 GL（原 :954）两条路径都已改 ✓
+3. **笔画结束复位**：4 处 `_history.CommitStroke(map);` 之后插入 `_brush.Shift = false;`，避免"移除模式"粘住 ✓
+
+### 9.3 编译验证
+
+```
+cd standalone/W3Editor && dotnet build -v q   →  build exit=0 ✓
+```
+
+### 9.4 尚未验证（明确）
+
+- **UI 端到端**（真的在编辑器里 Shift 点击后保存，再比对 ramp 旗）**尚未执行** ✗ ——
+  Task 6 的验收要求"从编辑器 UI 操作成功"，需要在交互式会话中按以下步骤取证：
+  1. 新建/打开含坡道的图 → 选坡道笔刷 → 普通点击建立 ramp → 保存 → 抽 w3e 记录集合 A
+  2. 按住 Shift 在同一点点击 → 保存 → 抽 w3e 记录集合 B
+  3. 断言 B 中该集合 ramp 位 1→0，且其它字段（h/w/tex/blight/boundary/变体/层级/类型）不变
+  4. 再试右键同点 → 断言 0 变化（对应官方 `Y10_ramp_right`）
+- `ConstrainRampToLine` 现已无调用点（保留未删，待确认无其它用途后再清理）。
