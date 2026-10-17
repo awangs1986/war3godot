@@ -621,18 +621,17 @@ Console.WriteLine("\n### C.2 待实验确认的行为快照（仅记录现状，
         Console.WriteLine($"- P0-2/P0-3 坡道 @ {label}：{(noOp ? "整笔无操作" : $"写入 ramp 标志 {rampCount} 点")} — 状态=未决（官方行为见 P0-2/P0-3 实验）");
     }
 
-    // P0-4 纹理覆盖荒芜 —— A 级已定案（VERIFICATION-MATRIX §14.9）
-    // 官方实测：荒芜位 = byte[5] bit2+bit3（D0→D3 置位）；异纹理覆盖后这两位被清零（D5→D6：
-    // 00200020000e10 → 00200020030210）；同纹理重涂不清任何位。
+    // P0-4 纹理覆盖荒芜 —— **未决**（原"已定案"结论已撤回，见 experiments/CORRECTIONS.md）
+    // 撤回理由：用权威字段表重解码后，D0/D3/D5/D6 的 blight 计数全为 0，
+    // 那几笔实际只改了 tex/groundVar/layer/cliffVar/cliffType ⇒ 没有可用于判断"是否清荒芜"的存档。
+    // 待补实验：先画荒芜并确认 byte4&0x20!=0，再在同批角点覆盖纹理（普通/Shift 各一组）。
     var bt = W3EMap.Load(Fix("base"));
     bt.Corners[32 * bt.Width + 31].Blight = true;
     bt.Corners[32 * bt.Width + 31].GroundTexture = 1;
     int blBefore = bt.Corners[32 * bt.Width + 31].GroundTexture;
     Stamp(bt, 31, 32, new BrushSettings { Op = BrushOp.Texture, Radius = 1, TextureIndex = 2 });
     var blc = bt.Corners[32 * bt.Width + 31];
-    bool p04Ok = blc.Blight == false;
-    Console.WriteLine($"- P0-4 纹理覆盖荒芜：blight={blc.Blight}（期望 False），地面纹理 {blBefore} → {blc.GroundTexture} — "
-        + (p04Ok ? "状态=一致（官方 D5→D6 实测：异纹理覆盖清除荒芜位）" : "状态=不一致（与 §14.9 A 级实测冲突）"));
+    Console.WriteLine($"- P0-4 纹理覆盖荒芜：blight={blc.Blight}，地面纹理 {blBefore} → {blc.GroundTexture} — 状态=未决（缺"落笔集合与荒芜集合重叠"的官方存档）");
 
     // P0-6 已有水面：浅水→深水 / 深水→浅水
     foreach (var (a, b) in new[] { (BrushOp.WaterShallow, BrushOp.WaterDeep), (BrushOp.WaterDeep, BrushOp.WaterShallow) })
