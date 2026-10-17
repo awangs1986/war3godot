@@ -11,13 +11,13 @@
 #   · 其它任何 是/否/取消 组合             → 不点，返回 NEEDS_HUMAN（并打印按钮文本）
 #
 # 用法：
-#   .\save-map.ps1 -Pid 27644                       # 普通保存：菜单 ID 4
-#   .\save-map.ps1 -Pid 27644 -AsPath D:\tools\exp\X1.w3m   # 另存为：菜单 ID 5 + 覆盖确认
+#   .\save-map.ps1 -ProcId 27644                       # 普通保存：菜单 ID 4
+#   .\save-map.ps1 -ProcId 27644 -AsPath D:\tools\exp\X1.w3m   # 另存为：菜单 ID 5 + 覆盖确认
 #
 # 返回：SAVED / NEEDS_HUMAN / FAILED:<原因>
 
 param(
-  [Parameter(Mandatory)][int]$Pid,
+  [Parameter(Mandatory)][int]$ProcId,
   [string]$AsPath,                # 为空 ⇒ 用「保存」(id=4)；非空 ⇒ 用「另存为」(id=5) 写到该路径
   [int]$Retries = 6
 )
@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 . "D:\tools\menudrv.ps1"
 . "D:\tools\ui.ps1"
 
-function TopList { [U]::Top($Pid) }
+function TopList { [U]::Top($ProcId) }
 function ButtonsOf($h) { ([U]::Kids($h) | Where-Object { ($_ -split '\|')[1] -eq 'Button' }) }
 function TextOf($b) { ($b -split '\|')[2] }
 function HwndOfRow($b) { HwndOf $b }
@@ -43,10 +43,13 @@ function HandleOne {
   # 需要拿到对话框正文才能判「覆盖」，故读取其子 Static 文本
   $statics = ([U]::Kids($h) | Where-Object { ($_ -split '\|')[1] -eq 'Static' } | ForEach-Object { ($_ -split '\|')[2] }) -join ' '
   $isOverwrite = ($joined -match '是' -and $joined -match '否') -and ($statics -match '覆盖|已存在|existing|overwrite' -or $title -match '确认|覆盖')
+  # 白名单 2：空图保存时的「是否自动放置开始点？」→ 是（测试图预期动作，官方会自动放开始点）
+  $isStartPoint = ($joined -match '是' -and $joined -match '否') -and ($statics -match '开始点')
 
-  if ($isOverwrite) {
+  if ($isOverwrite -or $isStartPoint) {
+    $what = if ($isOverwrite) { '覆盖确认' } else { '开始点确认' }
     $yes = $btns | Where-Object { (TextOf $_) -match '^是' } | Select-Object -First 1
-    if ($yes) { ClickButton (HwndOfRow $yes); return @{ act = 'clicked'; what = "覆盖确认 → 是（$title）" } }
+    if ($yes) { ClickButton (HwndOfRow $yes); return @{ act = 'clicked'; what = "$what → 是（$title）" } }
   }
   if (-not ($joined -match '是|否|取消')) {
     $ok = $btns | Where-Object { (TextOf $_) -match '确定' } | Select-Object -First 1
@@ -57,11 +60,11 @@ function HandleOne {
 
 # ---- 触发保存 ----
 $id = if ($AsPath) { 5 } else { 4 }
-[U]::PostMessage([IntPtr][int64](Get-Process -Id $Pid).MainWindowHandle, 0x0111, [IntPtr]$id, [IntPtr]::Zero) | Out-Null
+[U]::PostMessage([IntPtr][int64](Get-Process -Id $ProcId).MainWindowHandle, 0x0111, [IntPtr]$id, [IntPtr]::Zero) | Out-Null
 Start-Sleep -Seconds 2
 
 for ($i = 0; $i -lt $Retries; $i++) {
-  $dlgs = TopList | Where-Object { $_ -match '#32770' -and $_ -notmatch '工具面板' }
+  $dlgs = TopList | Where-Object { $_ -match '#32770' -and $_ -notmatch '工具面板|进程' }
   if (-not $dlgs) {
     if ($AsPath) {
       if (Test-Path -LiteralPath $AsPath) { return "SAVED:$AsPath" }
@@ -89,6 +92,7 @@ for ($i = 0; $i -lt $Retries; $i++) {
       return "NEEDS_HUMAN:另存为对话框结构不符（Edits=$($edits.Count)）"
     }
     $r = HandleOne $d
+    if ($r.act -eq 'crash') { return "FAILED:crashed（$($r.what)）" }
     if ($r.act -eq 'human') { return "NEEDS_HUMAN:$($r.what)" }
     Write-Host "  $($r.what)"
     Start-Sleep -Milliseconds 600
