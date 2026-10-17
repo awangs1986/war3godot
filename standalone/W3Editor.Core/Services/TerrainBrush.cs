@@ -559,7 +559,10 @@ public static class TerrainBrush
         var diag = new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) }
             .Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1)
             .ToList();
-        if (diag.Count == 1)
+        bool anyDiffer4 = dirs4.Any(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight != L);
+        // 官方实测：**四邻全部等于中心 L**（无任何层差）且无对角高 ⇒ 写 3×3（9 点，Y10_ramp_made 9/9 ✓）。
+        // 若存在 L−1 的邻点（Y9_ramp_n0/n1）官方只写 3 共线，而该轴由**拖拽方向**决定、单点信息不足 ⇒ 不在此处猜，保持不动。
+        if (diag.Count == 1 || (diag.Count == 0 && !anyDiffer4))
             for (int j = -1; j <= 1; j++)
                 for (int i = -1; i <= 1; i++)
                     if (Inside(m, cx + i, cy + j))

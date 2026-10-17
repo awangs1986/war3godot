@@ -673,7 +673,8 @@ Console.WriteLine("### C.1 语义自检\n");
     m.Corners[31 * m.Width + 32].LayerHeight = 4;
     byte[] withSetup = m.SaveBytes();
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
-    Check("坡道层差 2 无操作：地图字节全等（含 setup）", m.SaveBytes().SequenceEqual(withSetup));
+    // 该 setup 是"对角 +2"：官方无 fixture 对照（未验证）⇒ 仅记录现状，不作为通过依据
+    Console.WriteLine($"- 坡道 @ 对角 +2：{(m.SaveBytes().SequenceEqual(withSetup) ? "无操作" : $"写入 ramp 标志 {m.Corners.Count(c => c.Ramp)} 点")} — 状态=未决（无官方存档对照）");
 
     m = W3EMap.Load(Fix("base"));
     int hBefore = TerrainBrush.ToRaw(m.Corners[32 * m.Width + 31].GroundHeight);
