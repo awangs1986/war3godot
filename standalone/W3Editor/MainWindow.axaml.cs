@@ -947,6 +947,8 @@ public partial class MainWindow : Window
         }
         float cx = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerX : MathF.Round(cornerX), 0, map.Width - 1);
         float cy = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerY : MathF.Round(cornerY), 0, map.Height - 1);
+        // 审查 P0：3D/GL 落笔路径同样要传递 Shift（坡道笔刷下 Shift = 移除），此前只接了 2D ✗
+        _brush.Shift = GlView.StrokeShift && _brush.Op == BrushOp.Ramp;
         if (_stroke == null)
         {
             _strokeErase = erase;
@@ -1000,7 +1002,7 @@ public partial class MainWindow : Window
         {
             EditMode.Pathing => (cornerX, cornerY, Math.Max((float)SliderPathingRadius.Value / 4f, 0.25f)),
             EditMode.Regions => (cornerX, cornerY, 0.25f),
-            _ when _brush.Op != BrushOp.None => (cornerX, cornerY, Math.Max(_brush.Radius * 0.5f, 0.5f)),
+            _ when _brush.Op != BrushOp.None => (cornerX, cornerY, Math.Max(_brush.Radius - 1f, 0f)),   // 审查 P1：预览半径与算法一致（算法 R = size−1，此前用 Radius*0.5 ✗）
             _ => null,
         };
     }
