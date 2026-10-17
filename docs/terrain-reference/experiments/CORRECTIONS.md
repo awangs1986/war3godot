@@ -1145,3 +1145,49 @@ C 语义自检 0 项失败
 | 存档往返（我们实现） | **A 级**（6 份证据图逐字节一致）✓ |
 | 存档往返（官方编辑器） | **A 级**（本节）✓ |
 | 3D 视图 Shift 运行期 | 仍 `未验证`（Avalonia 自绘无 Win32 句柄 ✗）；判定函数 `TerrainBrush.ShiftFor` 已单点化并有断言 ✓ |
+
+---
+
+## 28. 3D 视图：入口、修饰键语义、以及运行期取证的状态
+
+### 28.1 2D ↔ 3D 切换入口（用户提供）
+
+右上角 **「3D 视口」** 按钮（比例位置 ≈ 窗口宽 **87.8%** / 高 **11.0%**），点一下即在 2D/3D 间切换 ✓
+状态栏在 3D 下显示：`3D 视口就绪 — 右键平移 · 中键/Ctrl+右键旋转 · 滚轮缩放 · 方向键平移 · G 网格 · Home 复位 · 左键刷地形（Ctrl+左键反向）`
+
+### 28.2 3D 的修饰键语义（代码事实，`GlTerrainViewport.cs:304-305`）
+
+```csharp
+_brushErase = e.KeyModifiers.HasFlag(KeyModifiers.Control);   // 3D 的"反向/擦除" = Ctrl
+StrokeShift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);     // 3D 的 Shift → StrokeShift
+```
+
+⇒ 3D 里 **Ctrl = 反向**、**Shift = StrokeShift**（不冲突 ✓）
+⇒ `MainWindow.axaml.cs:951` 的 `_brush.Shift = TerrainBrush.ShiftFor(_brush.Op, GlView.StrokeShift);`
+在 3D 里**确实会生效** ✓ ⇒ 审查 P0「3D 没传 Shift」在**代码路径上已闭环** ✓
+
+### 28.3 我方编辑器的 CLI 实测
+
+| 参数 | 结果 |
+|---|---|
+| `--open <map.w3m>` | **可用** ✓（解包到 `war3\maps\<名>\source` 并打开；`--view3d --shot3d` 出图 1.4 MB ✓） |
+| `--new 65x65xL` | **不可用** ✗（窗口标题仍 `未打开地图`、工具栏无 `打开/保存/导出`、地形区空白 ⇒ `_session.CreateNew(...)` 未成功；两次尝试含以 `D:\godot project\diablo1like` 为工作目录 ✗） |
+| IPC (`MainWindow.Ipc.cs:73-79`) | 仅 `ping`/`status`/`open_map`/`screenshot`/`ui_screenshot` ⇒ **无笔刷命令** ✗ |
+
+### 28.4 运行期取证仍缺（**明确未完成**）
+
+尝试用 Win32 注入（`SetCursorPos` + `mouse_event` + `keybd_event(Shift)`）在 3D 里点击：
+
+- 第 1 次：`--new` 未建图 ⇒ 点击全落空 ✗
+- 第 2 次：`--open M0` 成功 ✓，但 `Ctrl+S` 未写盘（标题出现 `●` 未保存标记 ✗）；改用工具栏 `保存` 按钮那次因 `Add-Type` 在独立 pwsh 中静默失败 ⇒ 点击函数未执行 ✗
+
+⇒ 3D 的「Shift + 坡道 ⇒ 移除」**没有运行期证据** ✓，现状只能说到"判定函数正确 + 3D 路径已调用 + 与 Ctrl 语义不冲突" ✓
+
+### 28.5 人工 1 分钟可闭环的步骤（供用户执行）
+
+1. 打开我们编辑器（`W3Editor.exe`），`文件 → 打开` 选一个**已有台阶**的地图
+2. 右上点 **「3D 视口」** 进入 3D
+3. 右侧 `悬崖` 组点 **「坡道」**，在台阶旁左键点一下 ⇒ 应出现坡道（可截图）
+4. 按住 **Shift**，同一点再左键点一下 ⇒ 坡道应被移除
+5. 点工具栏 **「保存」**
+6. 我用 `w3e_diff.py` 比对 `war3\maps\<名>\source\war3map.w3e` 的前后 `ramp` 点数 ⇒ 若 9→0 即 A 级闭环 ✓
