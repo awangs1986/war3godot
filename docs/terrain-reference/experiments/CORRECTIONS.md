@@ -731,3 +731,52 @@ if (diag.Count == 1 || (diag.Count == 0 && !anyDiffer4))
 - 脚本已入库 ✓
 - **A 级执行仍被阻塞** ✗：调色板 `IsWindowVisible = True` 但内部工具页 `visible=False`（`MAPPING.md §5.1`），
   无法在自动化路径下选中「斜坡」并保证点到层差台阶 ⇒ `G6′`（坡道方向）保持 **`未验证（B 级定位已完成，A 级待执行）`** ✓
+
+---
+
+## 19. **自我推翻（第二次）**：§12 的"纹理刷不触碰 blight"是错的 —— B 级证据指向"会清 blight"
+
+### 19.1 错在哪
+
+§12 我把 `ghidra_286a60.c:192` 的 `auStack_d0._12_2_ &= uVar6`（`uVar6 = 0xfffb`）判成"作用于字节 12 = NOTH 标志，与 blight 无关" ✗。
+错因：**没有把内存记录偏移映射回字段语义**就下了结论 ✗。
+
+### 19.2 正确映射（本仓库自己的文档里早就写着）
+
+`1.32-brush-water-texture-cliff.md` 的标志位表（第 286-289 行）明确：
+
+| 语义 | 位置 |
+|---|---|
+| 跳过位 | `word[+0x0c]` bit **0** |
+| **blight** | `word[+0x0c]` bit **2**（`0x0004`） |
+| 有水 | `word[+0x0c]` bit **4**（`0x0010`） |
+| 边界 | `word[+0x0c]` bit **6**（`0x0040`） |
+
+⇒ `0xfffb` = 清 bit2 = **清 blight** ✓；`0xffbf` = 清 bit6 = 清边界（NOTH 分支）✓
+⇒ `ghidra_286a60.c:174`（`byte8 & 0xf`=纹理）与 `:183/:188`（`byte9 & 0x1f`=地表变体）**同时**成立，两者不矛盾 ✓
+
+### 19.3 因此实现改回"清 blight"（B 级支撑）
+
+```csharp
+c.GroundTexture = s.TextureIndex;
+c.GroundVariation = Rng.NextDouble() < 0.91 ? common[…] : Rng.Next(1, 16);
+c.Blight = false;   // B 级：ghidra_286a60.c:190,192 → word[+0x0c] &= 0xfffb（清 bit2 = blight）
+```
+
+`P0-4` 自检输出：`blight=False … 状态=B 级（ghidra_286a60.c:190,192 清 word[+0x0c] bit2=blight；A 级真机存档仍缺）` ✓
+
+### 19.4 回归
+
+```
+build exit=0 · run exit=0
+A 官方存档已验证：用例 65，逐用例与参考一致 45/45，已登记差异 49 点，未登记差异 0 点
+```
+
+（现有官方 texture 用例的角点**本来就没有 blight** ⇒ 清 blight 不产生可观测差异 ⇒ 套件保持全绿 ✓，
+这与"B 级结论正确"并不冲突：**没有样本能覆盖它**，所以 A 级仍缺 ✓）
+
+### 19.5 记录在案的教训
+
+1. **"作用在哪个字节"必须先映射回字段语义再下结论** —— 这是我第二次在同一处栽倒（第一次把 byte5 变体位当荒芜位 ✗）
+2. 本仓库已有权威映射表时，**先查表再断言**，不要凭"这个字节看起来像 NOTH"外推 ✓
+3. A 级仍缺 ⇒ 状态写 **B 级（A 级待验）**，不得写成"已实测定案" ✓
