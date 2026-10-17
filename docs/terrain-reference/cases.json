@@ -547,7 +547,8 @@
   "cx": 31,
   "cy": 32,
   "note": "P0-1 撤销后 = 基准（官方逐字段 0 差异）",
-  "no_reference": true
+  "no_reference": true,
+  "skip": "撤销路径未建模（无对应笔刷调用，需先用 UI 取证）"
  },
  {
   "algo": "blight",
@@ -610,7 +611,10 @@
   "cx": 31,
   "cy": 32,
   "note": "P0-6 已有浅水上再点浅水 = 官方逐字段 0 差异",
-  "no_reference": true
+  "no_reference": true,
+  "apply": [
+   "shallow"
+  ]
  },
  {
   "algo": "deep",
@@ -694,7 +698,10 @@
   "cx": 32,
   "cy": 31,
   "note": "P0-2 普通再点 = 官方 0 差异（不移除）",
-  "no_reference": true
+  "no_reference": true,
+  "apply": [
+   "ramp"
+  ]
  },
  {
   "algo": "ramp",
@@ -706,7 +713,8 @@
   "cx": 32,
   "cy": 31,
   "note": "P0-2 Shift 之后右键 = 官方 0 差异（不移除/不改动）",
-  "no_reference": true
+  "no_reference": true,
+  "skip": "右键输入映射未实现（官方右键行为尚无实测证据）"
  },
  {
   "algo": "ramp",

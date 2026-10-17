@@ -69,6 +69,25 @@ var knownBin = new Dictionary<string, JsonElement>();
             knownBin[e.GetProperty("name").GetString()!] = e.Clone();
 }
 
+// 登记项必须可解析且字段类型正确；被篡改/损坏时**干净失败**，而不是抛异常崩溃。
+foreach (var e in known)
+{
+    string? kase = null, fld = null;
+    try
+    {
+        kase = e.GetProperty("case").GetString();
+        fld = e.GetProperty("field").GetString();
+        _ = e.GetProperty("x").GetInt32();
+        _ = e.GetProperty("y").GetInt32();
+        _ = e.GetProperty("expected");
+        _ = e.GetProperty("actual");
+    }
+    catch (Exception ex)
+    {
+        HardFail($"known-differences 条目损坏（case={kase} field={fld}）：{ex.GetType().Name} {ex.Message} —— 登记值被篡改或字段类型错误");
+    }
+}
+
 string Fix(string n) => Path.Combine(baseDir, "fixtures", n + ".w3e");
 bool FixtureExists(string n) => File.Exists(Fix(n));
 
@@ -78,6 +97,7 @@ string[] requiredFields = { "algo", "op", "before", "after", "size", "cx", "cy",
 string[] protocolFields = { "tileset", "modifiers", "steps", "tool_label", "resource_version", "editor_config" };
 
 var metadataGaps = new List<string>();
+var skipped = new List<string>();   // 用例声明 skip：输入无法建模（如撤销/右键），显式跳过而不是假装通过
 for (int i = 0; i < cases.Count; i++)
 {
     var c = cases[i];
@@ -141,6 +161,12 @@ var sb = new StringBuilder("| 算法 | 前 → 后 | 对照字段 | 匹配 / 相
 
 for (int ci = 0; ci < cases.Count; ci++)
 {
+    if (cases[ci].TryGetProperty("skip", out var skipWhy))
+    {
+        var skAfter = cases[ci].TryGetProperty("after", out var sa) ? sa.GetString() : "?";
+        skipped.Add($"| {cases[ci].GetProperty("algo").GetString()}:{skAfter} | {skipWhy.GetString()} |");
+        continue;
+    }
     var c = cases[ci];
     string algo = c.GetProperty("algo").GetString()!, op = c.GetProperty("op").GetString()!;
     string before = c.GetProperty("before").GetString()!, after = c.GetProperty("after").GetString()!;
@@ -160,41 +186,59 @@ for (int ci = 0; ci < cases.Count; ci++)
     else ct = Int("ct", 1);
 
     if (algo == "noise") TerrainBrush.Rng = new Random(1);
-    switch (op)
+    // 真实执行一个笔刷操作（按 op 名分派）。
+    // 注意：`none` 不再表示"什么都不做"——它必须通过用例的 `apply` 字段
+    // 声明**真实执行过**的笔刷序列；否则无法区分"执行后无变化"与"根本没执行"。
+    void RunOp(string opName)
     {
-        case "raise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Raise, Radius = size }); break;
-        case "lower": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Lower, Radius = size }); break;
-        case "plateau": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Plateau, Radius = size, Shape = shape }); break;
-        case "smooth": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Smooth, Radius = size, Shape = shape }); break;
-        case "smooth_shift": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Smooth, Radius = size, Shape = shape, Shift = true }); break;
-        case "noise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Noise, Radius = size, Shape = shape }); break;
-        case "cliff":
-            var k = Int("k", 1);
-            var cop = k == 2 ? BrushOp.CliffRaise2 : k == 1 ? BrushOp.CliffRaise1 : k == -1 ? BrushOp.CliffLower1 : BrushOp.CliffLower2;
-            var clicks = c.TryGetProperty("clicks", out var cl)
-                ? cl.EnumerateArray().Select(e => (e[0].GetInt32(), e[1].GetInt32())).ToList()
-                : Enumerable.Repeat((0, 0), Int("repeat", 1)).ToList();
-            foreach (var (ox, oy) in clicks)
-                Stamp(P, cx + ox, cy + oy, new BrushSettings { Op = cop, Radius = size, Shape = shape, CliffTextureId = ct });
-            break;
-        case "shallow": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterShallow, Radius = size, CliffTextureId = ct }); break;
-        case "deep": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterDeep, Radius = size, CliffTextureId = ct }); break;
-        case "ramp": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size }); break;
-        case "none":
-            // 官方在此用例中**无任何落笔**（撤销后态/已有水再点/坡道再点或右键）：
-            // 实现侧同样不应产生改动；任何差异都会作为未登记差异失败。
-            break;
-        case "ramp_shift_remove":
-            // 官方实测（Y10_ramp_made → Y10_ramp_shift）：同一组 ramp 角点上 **Shift 点击 → ramp 旗 1→0**。
-            // 这里按"Shift 是 BrushSettings 上的修饰键"驱动实现（与 smooth_shift 同路径），
-            // 不读 after 的答案。实现目前 Ramp 忽略 Shift ⇒ 9 点差异 ⇒ 该回归会失败（缺口可见）。
-            Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size, Shift = true });
-            break;
-        case "texture": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Texture, Radius = size, Shape = shape, TextureIndex = Int("tex", 1) }); break;
-        case "blight": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Blight, Radius = size, Shape = shape }); break;
-        case "boundary": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.BoundaryAdd, Radius = size, Shape = shape }); break;
-        default: HardFail($"用例 {after} 的操作 `{op}` 未知"); continue;
+        switch (opName)
+        {
+            case "raise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Raise, Radius = size }); break;
+            case "lower": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Lower, Radius = size }); break;
+            case "plateau": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Plateau, Radius = size, Shape = shape }); break;
+            case "smooth": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Smooth, Radius = size, Shape = shape }); break;
+            case "smooth_shift": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Smooth, Radius = size, Shape = shape, Shift = true }); break;
+            case "noise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Noise, Radius = size, Shape = shape }); break;
+            case "cliff":
+                var k = Int("k", 1);
+                var cop = k == 2 ? BrushOp.CliffRaise2 : k == 1 ? BrushOp.CliffRaise1 : k == -1 ? BrushOp.CliffLower1 : BrushOp.CliffLower2;
+                var clicks = c.TryGetProperty("clicks", out var cl)
+                    ? cl.EnumerateArray().Select(e => (e[0].GetInt32(), e[1].GetInt32())).ToList()
+                    : Enumerable.Repeat((0, 0), Int("repeat", 1)).ToList();
+                foreach (var (ox, oy) in clicks)
+                    Stamp(P, cx + ox, cy + oy, new BrushSettings { Op = cop, Radius = size, Shape = shape, CliffTextureId = ct });
+                break;
+            case "shallow": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterShallow, Radius = size, CliffTextureId = ct }); break;
+            case "deep": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.WaterDeep, Radius = size, CliffTextureId = ct }); break;
+            case "ramp": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size }); break;
+            case "ramp_shift_remove":
+                // 官方实测（Y10_ramp_made → Y10_ramp_shift）：同一组 ramp 角点上 Shift 点击 → ramp 旗 1→0。
+                Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Ramp, Radius = size, Shift = true });
+                break;
+            case "texture": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Texture, Radius = size, Shape = shape, TextureIndex = Int("tex", 1) }); break;
+            case "blight": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Blight, Radius = size, Shape = shape }); break;
+            case "boundary": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.BoundaryAdd, Radius = size, Shape = shape }); break;
+            case "none":
+                HardFail($"用例 {after}: op=none 的 apply 里不允许再出现 none（必须写成真实笔刷调用）");
+                break;
+            default:
+                HardFail($"用例 {after} 的操作 `{opName}` 未知");
+                break;
+        }
     }
+
+    if (op == "none")
+    {
+        // 必须显式声明"执行了哪些真实笔刷"；一个都不声明 ⇒ 输入缺失 ⇒ 失败。
+        var applyList = c.TryGetProperty("apply", out var ap)
+            ? ap.EnumerateArray().Select(e => e.GetString()!).Where(s => !string.IsNullOrWhiteSpace(s)).ToList()
+            : new List<string>();
+        if (applyList.Count == 0)
+            HardFail($"用例 {after}: op=none 缺少 `apply`（必须列出真实执行的笔刷，例如 [\"shallow\"]；不得用『未执行』代替『执行后无变化』）");
+        else
+            foreach (var o in applyList) RunOp(o);
+    }
+    else RunOp(op);
 
     string caseKey = $"{algo}:{after}";
     caseKeyOf[caseKey] = ci;
