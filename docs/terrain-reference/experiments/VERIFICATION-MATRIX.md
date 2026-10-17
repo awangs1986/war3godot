@@ -1,10 +1,15 @@
 # 1.32 验证矩阵（PR #1–#5 断言复核）
 
-> [!WARNING] 本文件含**已作废结论**
-> 文中「纹理刷清 blight（0xfffb）」与「荒芜位 = byte5 bit2+bit3」两处**已撤回**。
-> 依据：CORRECTIONS.md §1 / §12 —— 权威字段表下 D0/D3/D5/D6 的 blight 计数均为 0；
-> ghidra_286a60.c:174/183/188 显示纹理刷只写 byte8 & 0xf 与 byte9 & 0x1f；
-> 0xffbf/0xfffb 作用在**字节 12**（NOTH 标志）而非 byte4。
+> [!IMPORTANT] 本文件含已修正结论（以 `experiments/CORRECTIONS.md` 为准）
+> **正确结论（最终）**
+> - 内存记录里标志字是 `word[+0x0c]`：跳过=bit0、**blight=bit2(0x0004)**、有水=bit4(0x0010)、边界=bit6(0x0040)
+> - w3e 文件里：`byte4` 低 4 位=纹理，`0x10` 坡道 / `0x20` blight / `0x40` 水 / `0x80` 边界
+> - **纹理刷会清 blight**：`ghidra_286a60.c:190` `uVar6 = 0xfffb` → `:192` `auStack_d0._12_2_ &= uVar6`（清 bit2）
+>   —— 等级 **B**（A 级真机存档仍缺）
+>
+> **已撤回（本文件中如出现以下说法，均已作废）**
+> - ✗ 「荒芜位 = byte5 bit2+bit3」（把地表变体位当成了荒芜位）
+> - ✗ 「纹理刷不触碰 blight / 0xfffb 与 blight 无关」（中间一次自我误判，已在 CORRECTIONS §19 推翻）
 
 > 依据 `AGENTS.md` 的 Evidence discipline：每条结论必须有实测数据或可复核产物；
 > 证据分级沿用三层：**A 官方存档已验证 / B 反编译·反汇编支持 / C 实现自检**。

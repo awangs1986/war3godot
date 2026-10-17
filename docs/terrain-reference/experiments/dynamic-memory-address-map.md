@@ -1,10 +1,15 @@
 # 动态内存验证：REA 静态地址 = 运行时地址（1.32.10.18820）
 
-> [!WARNING] 本文件含**已作废结论**
-> 文中「纹理刷清 blight（0xfffb）」与「荒芜位 = byte5 bit2+bit3」两处**已撤回**。
-> 依据：CORRECTIONS.md §1 / §12 —— 权威字段表下 D0/D3/D5/D6 的 blight 计数均为 0；
-> ghidra_286a60.c:174/183/188 显示纹理刷只写 byte8 & 0xf 与 byte9 & 0x1f；
-> 0xffbf/0xfffb 作用在**字节 12**（NOTH 标志）而非 byte4。
+> [!IMPORTANT] 本文件含已修正结论（以 `experiments/CORRECTIONS.md` 为准）
+> **正确结论（最终）**
+> - 内存记录里标志字是 `word[+0x0c]`：跳过=bit0、**blight=bit2(0x0004)**、有水=bit4(0x0010)、边界=bit6(0x0040)
+> - w3e 文件里：`byte4` 低 4 位=纹理，`0x10` 坡道 / `0x20` blight / `0x40` 水 / `0x80` 边界
+> - **纹理刷会清 blight**：`ghidra_286a60.c:190` `uVar6 = 0xfffb` → `:192` `auStack_d0._12_2_ &= uVar6`（清 bit2）
+>   —— 等级 **B**（A 级真机存档仍缺）
+>
+> **已撤回（本文件中如出现以下说法，均已作废）**
+> - ✗ 「荒芜位 = byte5 bit2+bit3」（把地表变体位当成了荒芜位）
+> - ✗ 「纹理刷不触碰 blight / 0xfffb 与 blight 无关」（中间一次自我误判，已在 CORRECTIONS §19 推翻）
 
 > 目的：确认 REA 反汇编里的地址在**运行期**是否就是同一处代码/数据；并记录内容级读取受阻的确切原因。
 > 方法特点：**零风险**——只读 `/proc/<pid>/maps`，不需要任何调试器；不改变编辑器状态。
@@ -59,7 +64,7 @@
 | 坡道的 `invert` 来自修饰键取反 | `gh_brush.txt:148,451`：`FUN_14027d450(map, cVar4 == '\0', pos, sink)` | ✅ 调用点可查 |
 | 类型传播**只写类型不改层** | `gh_c5.txt:22` `if (*(char*)(lVar4+0xb) != 0)`；`:23` `bVar8 = *(byte*)(lVar4+10) >> 4`；`:45` `local_70[10] = auVar1[10] & 0xf \| bVar8 << 4` | ✅ 已验证（含 `+0x0b` 门与"保低 4 位"） |
 | **坡道内部**：`bit==invert` 跳过、`or 0x0002`/`and 0xfffd`、3 共线 vs 3×3 判定、`max-min<=1` 跨度规则、一致性回扫回滚 | **所有 dump 中都没有 `FUN_14027d450` 的函数体** | ❌ **未验证（推断）** |
-| **纹理刷清 blight**：`rec.word[+0x0c] &= 0xfffb` @`0x286df7` | **无 `FUN_140286a60` 函数体**；全部 dump 中唯一 `& 0xfffb` 在 `gh_stitch.txt:2015`（**接缝**代码），`& 0xffef` 在 `gh_brush.txt:662`（清 bit4=水），均非纹理刷 | ❌ **未验证，且现有证据指向别处** |
+| **纹理刷清 blight**：`rec.word[+0x0c] &= 0xfffb` @`0x286df7` | ****函数体已获得**：见 `ghidra/ghidra_286a60.c`（231 行）| ❌ **未验证，且现有证据指向别处** |
 
 **纪律结论**：本节之前把"坡道内部规则/纹理刷清 blight"当作 REA 结论引用是**越界**的；本轮改为"**推断，待内存 dump 核对**"，
 并在 `FINDINGS.md` / `1.32-brush-water-texture-cliff.md` 对应处加注。
