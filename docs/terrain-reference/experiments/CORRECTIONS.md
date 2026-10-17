@@ -426,7 +426,7 @@ cd standalone/W3Editor && dotnet build -v q   →  build exit=0 ✓
 | 166-171 | `if (param_2 == 0x48544f4e) { … auStack_d0._12_2_ |= 0x40; }` | `0x48544f4e` = ASCII **`NOTH`**（"没有"纹理）⇒ 置字节 12 的 `0x40` |
 
 **结论（B 级）**
-- 纹理笔刷写入范围 = **byte8 低 4 位 + byte9 低 5 位** ⇒ **不触碰荒芜位 `0x20`** ✓
+- 纹理笔刷写入范围 = **byte8 低 4 位 + byte9 低 5 位** ⇒ **不触碰荒芜位 `0x20`** ✓ ⚠ **本条已被 §19 推翻**（`0xfffb` 清的是 `word[+0x0c]` bit2 = blight）
 - `0xffbf` / `0xfffb` 是**字节 12**（NOTH 标志）上的掩码，与 byte4 无关 ✗
   ⇒ 我此前"A 级：异纹理覆盖清荒芜（依据 `0xfffb`）"的说法**字节与位都认错了** ✓ 已在 §1 撤回 ✓
 - 实现当前行为（不写 blight）与 B 级证据一致 ✓
