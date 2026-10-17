@@ -68,3 +68,34 @@ data = a.read_file(b'war3map.w3e')     # 29,644 字节，头 57334521 0b000000 =
 
 - `D:\tools\exp\E0.w3m`（16KB，64×64 新图）
 - `D:\tools\exp\E0.w3e`（29,644 字节，version 11）⇒ 可直接与编辑后版本逐字节对照
+
+---
+
+## 7. 重启后握手序列（round 28–30 补齐，避免重复踩坑）
+
+**现象**：强杀并 `-launch` 重启后，`Ctrl+N` / `保存` 均无效 ✗，窗口标题停在 `魔兽争霸III地图编辑器`（无地图）。
+
+**原因**：重启后旧窗口句柄与焦点假设失效；且新实例启动后**不会自动新建地图**。
+
+**正确握手顺序**：
+
+```powershell
+$np = Start-Process "…\World Editor.exe" -ArgumentList '-launch' -WorkingDirectory (Split-Path $exe) -PassThru
+$Pid0 = $np.Id
+# 1) 等主窗口出现（OsWindow，标题含「魔兽争霸III地图编辑器」），最长 60s
+# 2) 枚举 [U]::Top($Pid0) 拿到 OsWindow 句柄 → ShowWindow(SW_MAXIMIZE) → SetForegroundWindow
+# 3) 先在地图区点一下（例如 (400,400)）确保焦点在视口，再发 Ctrl+N
+# 4) Ctrl+N 后等 2s，对话框标题应为「创建新地图」；按 Enter 接受默认（64×64）
+# 5) 标题应变为「…[未命名的 1]」⇒ 握手成功
+# 6) 首次保存走三层对话框：警告(开始点)→**必须选「是」**、提示(默认名)→确定、另存为→WM_SETTEXT 全文
+#    路径 + BM_CLICK 保存；若出现「确认另存为」→ 选「是」→ **再点一次「保存」**
+```
+
+**保存是否真的写盘的唯一判据**：
+```powershell
+$h1 = (Get-FileHash $map).Hash; # 落笔前
+# …落笔（标题应变脏）+ 保存…
+$h2 = (Get-FileHash $map).Hash; # 保存后
+if ($h1 -eq $h2) { "保存未写盘 ✗ —— 不要继续取数" }
+```
+⇒ 本轮 G5′/G6′ 正是因为 **`h1 == h2`（T1/T2 与 T0 逐字节相同）** 而拒绝把"脏标记变化"当作证据 ✓
