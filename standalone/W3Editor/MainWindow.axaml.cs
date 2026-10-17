@@ -626,7 +626,7 @@ public partial class MainWindow : Window
         // 因此坡道时 Shift 不再兼作"直线约束"（冲突已在此消解）；其它笔刷保持原有直线约束语义。
         {
             bool shiftDown = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            _brush.Shift = shiftDown && _brush.Op == BrushOp.Ramp;
+            _brush.Shift = TerrainBrush.ShiftFor(_brush.Op, shiftDown);   // 2D 路径（与 3D 共用同一判定）
         }
         _stroke = new BrushStroke();
         _strokeApplied = false;
@@ -948,7 +948,7 @@ public partial class MainWindow : Window
         float cx = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerX : MathF.Round(cornerX), 0, map.Width - 1);
         float cy = Math.Clamp(_brush.Op == BrushOp.Ramp ? cornerY : MathF.Round(cornerY), 0, map.Height - 1);
         // 审查 P0：3D/GL 落笔路径同样要传递 Shift（坡道笔刷下 Shift = 移除），此前只接了 2D ✗
-        _brush.Shift = GlView.StrokeShift && _brush.Op == BrushOp.Ramp;
+        _brush.Shift = TerrainBrush.ShiftFor(_brush.Op, GlView.StrokeShift);   // 3D/GL 路径（同一判定）
         if (_stroke == null)
         {
             _strokeErase = erase;

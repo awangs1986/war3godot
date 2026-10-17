@@ -1049,3 +1049,58 @@ build exit=0 · run exit=0
 A 官方存档已验证：用例 65，逐用例与参考一致 45/45，已登记差异 49 点，未登记 0 点
 C 实现自检：语义自检 0 项失败（含新增 4 条坡道断言 + 3 条 blight 证据断言）
 ```
+
+---
+
+## 26. 补齐两个缺口：**3D 修饰键**（可断言化）+ **保存重开一致性**（可自动化部分已做）
+
+### 26.1 3D 修饰键：从"两条路径各写一遍"改为**单一判定**
+
+审查指出 3D 未接 Shift ✗。本轮把判定收敛到 Core 的一个函数，**两条 UI 路径共用**：
+
+```csharp
+// TerrainBrush.cs（public，便于测试工程直接断言）
+public static bool ShiftFor(BrushOp op, bool modifierDown) => modifierDown && op == BrushOp.Ramp;
+
+// MainWindow.axaml.cs —— 2D 路径
+_brush.Shift = TerrainBrush.ShiftFor(_brush.Op, shiftDown);
+// MainWindow.axaml.cs —— 3D/GL 路径
+_brush.Shift = TerrainBrush.ShiftFor(_brush.Op, GlView.StrokeShift);
+```
+
+新增断言（全部 OK ✓）：
+```
+- ShiftFor：Ramp + 按下 ⇒ true: OK
+- ShiftFor：Ramp + 未按 ⇒ false: OK
+- ShiftFor：Raise + 按下 ⇒ false（其它笔刷忽略 Shift）: OK
+```
+
+**仍未验证**：3D 视图里的**运行期**点击（Avalonia 自绘视图无 Win32 子控件句柄 ✗，`UIA` 也取不到 ✗）
+⇒ 3D 的"点击 → Shift → 移除"整链**没有**端到端证据 ✓，只有"判定函数正确 + 两条路径都调用它"这一层 ✓
+
+### 26.2 保存-重开一致性：分两层处理
+
+| 层 | 做法 | 结果 |
+|---|---|---|
+| **序列化往返**（我们自己的实现） | 对 6 份 A 级证据图 `Load → SaveBytes → LoadBytes → SaveBytes`，比较两次字节 | **全部逐字节一致** ✓（`BlightOnly`/`BlightThenTex`/`BlightTwice`/`ramp_single_m10_m10`/`ur_undo`/`ur_redo`，各 29644 B） |
+| **官方编辑器重开** | 需 `打开地图` | **4 条自动化路线全部失败** ✗，见 26.3 |
+
+### 26.3 官方编辑器"打开地图"的 4 次失败尝试（负结果记录）
+
+| 尝试 | 结果 |
+|---|---|
+| 命令行 `World Editor.exe -launch "<map.w3m>"` | 忽略参数 ✗（标题仍 `魔兽争霸III地图编辑器`，无 `[…]`） |
+| `打开文档` 对话框的 `目录:`（`SetEdit`/`WM_SETTEXT`） | **不生效** ✗（写入后读取为空串） |
+| `目录:` 框点进去 + `SendKeys` 全路径 + `Enter` | **不生效** ✗（对话框仍在、标题不变） |
+| 点 `浏览` 进标准文件对话框 | 模态窗口让后续 UI 自动化调用**阻塞** ✗ |
+
+⇒ `打开地图` 目前**只能人工操作** ✓；"官方编辑器保存→重开"的一致性验证需要人工打开一次地图后由自动化接管 ✓
+
+### 26.4 回归（本轮实测）
+
+```
+build exit=0 · run exit=0
+ShiftFor ×3 OK · 6 份存档往返字节一致 OK · 坡道规则 ×4 OK · blight 证据 ×3 OK · 平地不写 ramp OK
+A 65 用例 / 45-45 一致 / 已登记差异 49 / 未登记 0
+C 语义自检 0 项失败
+```

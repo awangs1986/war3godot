@@ -540,6 +540,11 @@ public static class TerrainBrush
     /// （实测 Y10_ramp_made → Y10_ramp_shift：同 9 点 1→0，其余字段 0 变化；
     ///  REA FUN_14027d450：`bit==invert` 跳过，invert=1 → `or 0x0002`，invert=0 → `and 0xfffd`）。
     /// </summary>
+    /// <summary>
+    /// 修饰键 → 坡道语义（审查 P0：2D 与 3D 视图必须用**同一处**判定，避免只接了一条路径）。
+    /// 只对 Ramp 生效；其它笔刷忽略 Shift。
+    /// </summary>
+    public static bool ShiftFor(BrushOp op, bool modifierDown) => modifierDown && op == BrushOp.Ramp;
     internal static void Ramp(W3EMap m, int cx, int cy, bool remove = false)
     {
         int L = At(m, cx, cy).LayerHeight;

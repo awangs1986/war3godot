@@ -661,6 +661,23 @@ Console.WriteLine("### C.1 语义自检\n");
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.CliffRaise1, Radius = 3, CliffTextureId = 1 });
     Check("悬崖 T=16 整笔拒绝：地图字节全等", m.SaveBytes().SequenceEqual(before));
 
+    // ===== 审查 P0/P2：修饰键判定 + 存档往返一致性（可自动化部分）=====
+    {
+        Check("ShiftFor：Ramp + 按下 ⇒ true", TerrainBrush.ShiftFor(BrushOp.Ramp, true));
+        Check("ShiftFor：Ramp + 未按 ⇒ false", !TerrainBrush.ShiftFor(BrushOp.Ramp, false));
+        Check("ShiftFor：Raise + 按下 ⇒ false（其它笔刷忽略 Shift）", !TerrainBrush.ShiftFor(BrushOp.Raise, true));
+
+        // 保存→重开（同一实现内）字节一致：对 A 级证据图逐一往返
+        foreach (var name in new[] { "BlightOnly", "BlightThenTex", "BlightTwice", "ramp_single_m10_m10", "ur_undo", "ur_redo" })
+        {
+            var src0 = W3EMap.Load(Fix(name));
+            byte[] orig = src0.SaveBytes();
+            var rt = W3EMap.LoadBytes(orig);
+            byte[] again = rt.SaveBytes();
+            Check($"{name} 存档往返字节一致（{orig.Length} B）", orig.SequenceEqual(again));
+        }
+    }
+
     // ===== 审查 P1：把 A 级坡道规则编码为失败断言（不依赖 GUI 复现性）=====
     {
         // (a) 对角 +1 ⇒ 3×3 共 9 点（A 级：ramp_single_m10_m10 等 4 组单点，抬高角点为中心 SW 对角）
