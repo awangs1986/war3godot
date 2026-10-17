@@ -157,6 +157,10 @@ var nochangeAllow = new HashSet<string>();
             nochangeAllow.Add($"{e.GetProperty("case").GetString()!.Split(':').Last()}|{e.GetProperty("field").GetString()}|{e.GetProperty("x").GetInt32()}|{e.GetProperty("y").GetInt32()}");
 }
 var unregistered = new List<string>();
+// 逐字段漏改/改错统计（生成 MISSED-CHANGES.md）
+var missCount = new Dictionary<string,int>();
+var wrongCount = new Dictionary<string,int>();
+var missSample = new Dictionary<string,List<string>>();
 var diffLines = new List<string>();
 
 // ───────────────────────────── 1. 层级 A：官方存档已验证 ─────────────────────────────
@@ -375,6 +379,14 @@ for (int ci = 0; ci < cases.Count; ci++)
                 if (a == b && a == p) continue;
                 all++;
                 if (b == p) { ok++; continue; }
+                {
+                    string mk = $"{caseKey}|{f}";
+                    bool isMiss = (a == p);
+                    if (isMiss) missCount[mk] = missCount.GetValueOrDefault(mk) + 1;
+                    else wrongCount[mk] = wrongCount.GetValueOrDefault(mk) + 1;
+                    if (!missSample.TryGetValue(mk, out var smp)) { smp = new List<string>(); missSample[mk] = smp; }
+                    if (smp.Count < 6) smp.Add($"({x},{y}) 官方={b} 实现={p} 改前={a}");
+                }
                 // 逐坐标逐字段差异：登记项必须同时锁定 (case,x,y,field) 与 (官方 expected, 实现 actual)；
                 // 若 expected/actual 任一对不上，按未登记处理（防止实现退化被豁免）。
                 string key = $"{caseKey}|{x}|{y}|{f}";
@@ -793,6 +805,27 @@ else if (unregistered.Count == 0)
         + "因此**不等于**全部行为正确");
 else
     Console.WriteLine($"- 结论：**存在回归**（未登记差异 {unregistered.Count} 处），必须修复");
+
+{
+    var sbM = new StringBuilder();
+    sbM.AppendLine("# 逐字段漏改清单（自动生成，勿手改）\n");
+    sbM.AppendLine("> 由 `standalone/W3EditorOfficialTest` 生成。`漏改` = 官方改了但实现没改；`改错` = 双方都改但值不同。");
+    sbM.AppendLine("> 只统计**对照字段**（各 algo 的 useFields）；其余字段由 `nochange` 越界检查覆盖。\n");
+    sbM.AppendLine("| 用例 | 字段 | 漏改点数 | 改错点数 | 样例（坐标 官方/实现/改前） |");
+    sbM.AppendLine("|---|---|---|---|---|");
+    var allKeys = missCount.Keys.Union(wrongCount.Keys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+    foreach (var k in allKeys)
+    {
+        var parts = k.Split('|');
+        missSample.TryGetValue(k, out var smp2);
+        sbM.AppendLine($"| {parts[0]} | {parts[1]} | {missCount.GetValueOrDefault(k)} | {wrongCount.GetValueOrDefault(k)} | "
+            + string.Join(" ； ", smp2 ?? new List<string>()) + " |");
+    }
+    if (allKeys.Count == 0) sbM.AppendLine("| （无） | — | 0 | 0 | 全部对照字段逐点一致 |");
+    var outPath = Path.Combine(baseDir, "experiments", "MISSED-CHANGES.md");
+    try { File.WriteAllText(outPath, sbM.ToString(), new System.Text.UTF8Encoding(false)); Console.WriteLine($"\n（已写出 MISSED-CHANGES.md）"); }
+    catch (Exception ex) { Console.WriteLine($"\n（写出失败：{ex.Message}）"); }
+}
 
 if (hardFailures.Count > 0)
 {
