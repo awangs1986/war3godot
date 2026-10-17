@@ -556,12 +556,13 @@ public static class TerrainBrush
             return;
         }
         if (anyHigher4) return;
-        var diag = new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) }
-            .Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1)
-            .ToList();
-        // 只处理"恰好一个对角更高 1 层"的情形（A 级：Y10_ramp_made 的 3×3 实际命中的就是本分支，其四邻全等但**对角**为 L+1）。
-        // 「四邻全等且无对角更高」是否写 3×3 **未验证**：审查指出纯平地单击不应产生 ramp（当前实现曾误写 9 点 ✗），故不再猜。
-        if (diag.Count == 1)
+        // A 级（本次单点四组 + Y10_ramp_made）：
+        //   · 对角 +1（本次：抬高点 (28,32) 是中心 (29,31) 的 SW 对角）⇒ 官方写 3×3 共 9 点 ✓
+        //   · 对角 +2（Y10_step_c2：SW (31,32) L=4，中心 L=2）⇒ 官方同样写 9 点 ✓
+        // ⇒ 触发条件是「**任一对角比中心高**」（不是"恰好 +1"，也不是"四邻全等" ✗）
+        var anyDiagHigher = new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) }
+            .Any(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight > L);
+        if (anyDiagHigher)
             for (int j = -1; j <= 1; j++)
                 for (int i = -1; i <= 1; i++)
                     if (Inside(m, cx + i, cy + j))
