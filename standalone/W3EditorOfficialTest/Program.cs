@@ -631,7 +631,7 @@ Console.WriteLine("\n### C.2 待实验确认的行为快照（仅记录现状，
     int blBefore = bt.Corners[32 * bt.Width + 31].GroundTexture;
     Stamp(bt, 31, 32, new BrushSettings { Op = BrushOp.Texture, Radius = 1, TextureIndex = 2 });
     var blc = bt.Corners[32 * bt.Width + 31];
-    Console.WriteLine($"- P0-4 纹理覆盖荒芜：blight={blc.Blight}，地面纹理 {blBefore} → {blc.GroundTexture} — 状态=未决（缺"落笔集合与荒芜集合重叠"的官方存档）");
+    Console.WriteLine($"- P0-4 纹理覆盖荒芜：blight={blc.Blight}，地面纹理 {blBefore} → {blc.GroundTexture} — 状态=未决（缺『落笔集合与荒芜集合重叠』的官方存档）");
 
     // P0-6 已有水面：浅水→深水 / 深水→浅水
     foreach (var (a, b) in new[] { (BrushOp.WaterShallow, BrushOp.WaterDeep), (BrushOp.WaterDeep, BrushOp.WaterShallow) })
