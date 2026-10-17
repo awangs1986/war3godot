@@ -434,3 +434,40 @@ cd standalone/W3Editor && dotnet build -v q   →  build exit=0 ✓
 **仍未验证（A 级）**：真机"先画荒芜→同角点纹理覆盖"的四组存档实验（同/异纹理 × 普通/Shift）——
 受调色板自动化阻塞未完成（§11.5、MAPPING §5.1）。B 级结论**不能替代** A 级实测，故 G8 整体状态仍标 `未验证`，
 只是实现侧现在有了 B 级支持✓。
+
+---
+
+## 13. 全 suite「不得越界」自动检查（本轮，任务书 §五 的落地加强）
+
+### 13.1 做法（数据驱动，不是手写清单）
+
+对 `cases.json` 每条非 `skip` 用例：用 `w3e_diff.py` 比较 `before/after` 两份**官方存档**，
+把**官方没有改变**的字段写进该用例的 `nochange` 列表（字段映射：`groundHeightRaw→h`、`waterRaw→w`、
+`layer→L`、`cliffType→ct`，其余同名）。harness 施加笔刷后逐角点检查：这些字段**只要有一个角点变化就硬失败**。
+
+生成结果：**63 条用例获得 `nochange`**（跳过 2 条：无 fixture/已 `skip`）。
+
+### 13.2 实测：零越界
+
+```
+$ dotnet build --no-incremental -v q   → exit=0
+$ dotnet run --no-build
+越界条目: 0
+A 官方存档已验证：用例 65，逐用例与参考一致 45/45，已登记差异 58 点，未登记差异 0 点
+run exit=0
+```
+
+⇒ 实现**从未**改动官方未改动的字段 ✓（这是比"匹配率"更强的性质：匹配率只管对照字段，越界检查管其余全部字段）
+
+### 13.3 守卫有效性（故意破坏）
+
+| 破坏 | 结果 |
+|---|---|
+| `Texture()` 里加 `c.Blight = true` | **`run exit=1`** ✓（`nochange` 命中，任务相关字段） |
+| 恢复（`--no-incremental` 重建） | **`run exit=0`** ✓，45/45、58 登记、0 未登记 |
+
+### 13.4 与 B 级结论的关系
+
+`ghidra_286a60.c:174/183/188` 表明纹理笔刷只写 `byte8 & 0xf` 与 `byte9 & 0x1f`（不触碰 `0x20` 荒芜位）。
+现在这一条**由 6 条 texture 用例的 `nochange` 自动保护** ✓：一旦实现越界写 blight/ramp/water/boundary/h/w/L/ct
+就会立即 `exit=1` ✓。B 级结论 + 自动守卫，两者互相印证 ✓。
