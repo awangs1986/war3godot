@@ -227,3 +227,26 @@ Stroke(map, ccx, ccy, size, s, op, stroke);
 - **根因待查**（水刷为何走到重写变体的路径），下一轮继续
 
 回归后：`已登记差异 59 点`（58 + 本条 nochange）✓、`未登记 0` ✓、`exit=0` ✓
+
+### 8.4 缺陷修复（水刷不应改变悬崖变体）
+
+**根因**：`Cliff(...)`（`TerrainBrush.cs:425-448`）在覆盖集合内每点执行 `CliffVariation = Rng.Next(4)`（:443），
+并通过 `Propagate(...)`（:479）在传播点重复该随机写入；而 `Water(...)` 末尾（:530）直接复用 `Cliff(...)`，
+于是**浅水/深水笔刷会随机改写 byte5 的悬崖变体** ✗ —— 官方存档显示水刷笔迹的 byte5 **逐字节不变** ✓。
+
+**修复**：给 `Cliff(...)` 与 `Propagate(...)` 增加 `bool randomizeVariation = true`，水刷调用处传 `false`：
+```csharp
+// Cliff
+if (randomizeVariation) c.CliffVariation = Rng.Next(4);   // 水刷路径不改变体（官方存档 byte5 不变）
+// Propagate
+if (randomizeVariation) nc.CliffVariation = Rng.Next(4);
+// Water
+Cliff(m, cx, cy, size, BrushShape.Circle, T, cliffType, randomizeVariation: false);
+```
+
+**验证（两步，防止被登记项掩盖）**：
+1. 保留旧登记项 → `58 登记差异`、`exit=0`、无 nochange 违规；
+2. **清空** `known-differences.json.nochange` 后重跑 → 仍然 `exit=0`、`45/45`、`未登记 0` ✓
+   ⇒ 修复是**真实**的，不是被允许列表掩盖 ✓
+
+（悬崖刷本身仍随机变体 —— 这是官方行为，`CliffVariation` 的两处写入保留 ✓）

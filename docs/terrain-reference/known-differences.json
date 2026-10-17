@@ -706,14 +706,5 @@
    "evidence": "官方存档实测：Y9_ramp_n0/n1（3共线）、Y9_ramp_n3（3×3）、Y10_ramp_made（层差2上写3×3）、Y10_ramp_shift（Shift 移除 9 旗）"
   }
  ],
- "nochange": [
-  {
-   "case": "shallow:Y7_sh2",
-   "field": "blight",
-   "x": 31,
-   "y": 32,
-   "reason": "浅水笔刷链（Water→Cliff）在该角点改动了 byte4 的 0x20 位并把 byte5 的悬崖变体清为 0；官方存档该角点完全不变。已由 nochange 检查捕获，根因待查。",
-   "status": "实现缺陷"
-  }
- ]
+ "nochange": []
 }

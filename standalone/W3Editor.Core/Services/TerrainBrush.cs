@@ -422,7 +422,7 @@ public static class TerrainBrush
     /// 4) 层差传播（0x573950 → 0x573b40 → 0x573990）。
     /// 未实现：按水夹层 0x5764a0（"夹后值改写 T" 怪癖）。
     /// </summary>
-    internal static bool Cliff(W3EMap m, int cx, int cy, int size, BrushShape shape, int targetLayer, int cliffType)
+    internal static bool Cliff(W3EMap m, int cx, int cy, int size, BrushShape shape, int targetLayer, int cliffType, bool randomizeVariation = true)
     {
         int T = targetLayer;
         if (T < 0 || T > MaxLayer) return false;          // 整笔拒绝【仅 1.27 源码】
@@ -440,10 +440,10 @@ public static class TerrainBrush
             c.CliffTexture = cliffType;
             // 变体只有 2 位：官方 FUN_14026a480 `FUN_14014e6a0(0,3)` → `&0x1f | c<<5`
             // （REA 2026-10-16 实测；官方 fixture 的 cw 只出现 {0,1,2}）
-            c.CliffVariation = Rng.Next(4);
+            if (randomizeVariation) c.CliffVariation = Rng.Next(4);   // 水刷路径不改变体（官方存档 byte5 不变）
             brushed.Add((x, y));
         }
-        Propagate(m, brushed, cliffType);
+        Propagate(m, brushed, cliffType, randomizeVariation);
         return true;
     }
 
@@ -453,7 +453,7 @@ public static class TerrainBrush
     /// 笔刷写过的点（深度 1）和更浅深度处理过的点不再改。
     /// 起点：改动区包围矩形外扩一圈，x 外层 y 内层，深度 1。
     /// </summary>
-    private static void Propagate(W3EMap m, List<(int x, int y)> brushed, int cliffType)
+    private static void Propagate(W3EMap m, List<(int x, int y)> brushed, int cliffType, bool randomizeVariation = true)
     {
         if (brushed.Count == 0) return;
         var depth = new Dictionary<(int, int), int>();
@@ -476,7 +476,7 @@ public static class TerrainBrush
                     if (t == nc.LayerHeight) continue;
                     nc.LayerHeight = t;
                     if (cliffType != -1) nc.CliffTexture = cliffType;   // 传播点也染类型
-                    nc.CliffVariation = Rng.Next(4);   // 传播点同样只有 2 位（同上）
+                    if (randomizeVariation) nc.CliffVariation = Rng.Next(4);   // 传播点同样只有 2 位（同上）
                     depth[(nx, ny)] = d + 1;
                     Visit(nx, ny, d + 1);
                 }
@@ -527,7 +527,7 @@ public static class TerrainBrush
             if (Inside(m, cx + dx, cy + dy))
                 At(m, cx + dx, cy + dy).Water = true;
         Plateau(m, cx, cy, size + 2, BrushShape.Circle, h0);
-        Cliff(m, cx, cy, size, BrushShape.Circle, T, cliffType);
+        Cliff(m, cx, cy, size, BrushShape.Circle, T, cliffType, randomizeVariation: false);
     }
 
     // ---------------- 坡道 ----------------
