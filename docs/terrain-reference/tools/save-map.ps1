@@ -65,6 +65,7 @@ Start-Sleep -Seconds 2
 
 for ($i = 0; $i -lt $Retries; $i++) {
   $dlgs = TopList | Where-Object { $_ -match '#32770' -and $_ -notmatch '工具面板|进程' }
+  if ($dlgs) { Write-Host ('  [save] 剩余对话框: ' + (($dlgs | ForEach-Object { ($_ -split '\|')[2] }) -join ', ')) }
   if (-not $dlgs) {
     if ($AsPath) {
       if (Test-Path -LiteralPath $AsPath) { return "SAVED:$AsPath" }

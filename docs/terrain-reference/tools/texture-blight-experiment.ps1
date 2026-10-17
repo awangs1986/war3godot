@@ -84,7 +84,7 @@ function Find-Brush($hPal, $lbls, [string]$wantLabel, [string]$axis) {
     [U]::SendMessage([IntPtr]$h, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     Start-Sleep -Milliseconds 150
     $after = L $lbls[$axis]
-    if ($after -ne $before -and $after -match [regex]::Escape($wantLabel)) { $hits += $h }
+    if ($after -ne $before -and $after -match [regex]::Escape($wantLabel)) { $hits += $h; break }   # 命中即停
   }
   return $hits
 }
@@ -230,9 +230,8 @@ $seq = switch ($Stage) {
 foreach ($sel in $seq) {
   $hits = Find-Brush $hPal $lbls $sel 'tex'
   if ($hits.Count -eq 0) { Finish $pid2 "FAILED: 找不到纹理刷「$sel」" }
-  $h2 = $hits[0]
-  [U]::SendMessage([IntPtr]$h2, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-  Start-Sleep -Milliseconds 400
+  # Find-Brush 命中的那一次点击已经把笔刷选好 ⇒ **不要重复点击**（否则会切成「没有」）
+  Start-Sleep -Milliseconds 300
   $s1 = Find-Size1 $hPal $lbls
   if ($s1) { [U]::SendMessage([IntPtr]$s1, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 250 }
   $c1 = Find-Shape $hPal $lbls '圆形'
