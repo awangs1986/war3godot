@@ -241,7 +241,7 @@ public static class TerrainBrush
             case BrushOp.WaterShallow: Water(m, cx, cy, size, 1, s.CliffTextureId); break;
             case BrushOp.WaterDeep: Water(m, cx, cy, size, 2, s.CliffTextureId); break;
             case BrushOp.WaterErase: break;  // 【未测】右键消水无存档对照
-            case BrushOp.Ramp: Ramp(m, cx, cy); break;
+            case BrushOp.Ramp: Ramp(m, cx, cy, s.Shift); break;
             case BrushOp.Texture: Texture(m, cx, cy, size, shape, s); break;
             case BrushOp.Blight: Blight(m, cx, cy, size, shape); break;
             case BrushOp.BoundaryAdd: Boundary(m, cx, cy, size, shape, add: true); break;
@@ -526,20 +526,23 @@ public static class TerrainBrush
     /// · 4 邻恰有一个高 1 层 → 写 3 角：c 外侧一个、c、高侧一个；
     /// · 无 4 邻更高、恰有一个斜邻高 1 层（台地凸角）→ 以 c 为中心 3×3；
     /// · 层差 2 或点在高处 → 什么都不做（实测 58 个位置全部无变化）。
-    /// 层级不变，只写 ramp 标志。
+    /// 层级不变，只写 ramp 标志。Shift = 官方 invert=0 ⇒ **清除**同组 ramp 旗
+    /// （实测 Y10_ramp_made → Y10_ramp_shift：同 9 点 1→0，其余字段 0 变化；
+    ///  REA FUN_14027d450：`bit==invert` 跳过，invert=1 → `or 0x0002`，invert=0 → `and 0xfffd`）。
     /// </summary>
-    internal static void Ramp(W3EMap m, int cx, int cy)
+    internal static void Ramp(W3EMap m, int cx, int cy, bool remove = false)
     {
         int L = At(m, cx, cy).LayerHeight;
         var dirs4 = new[] { (1, 0), (-1, 0), (0, 1), (0, -1) };
         var high4 = dirs4.Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1).ToList();
         bool anyHigher4 = dirs4.Any(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight > L);
+        bool target = !remove;   // 官方 FUN_14027d450：invert=1 置位、invert=0 清位（Shift 即 invert=0）
         if (high4.Count == 1)
         {
             var (dx, dy) = high4[0];
             foreach (int t in new[] { -1, 0, 1 })
                 if (Inside(m, cx + t * dx, cy + t * dy))
-                    At(m, cx + t * dx, cy + t * dy).Ramp = true;
+                    At(m, cx + t * dx, cy + t * dy).Ramp = target;
             return;
         }
         if (anyHigher4) return;
@@ -550,7 +553,7 @@ public static class TerrainBrush
             for (int j = -1; j <= 1; j++)
                 for (int i = -1; i <= 1; i++)
                     if (Inside(m, cx + i, cy + j))
-                        At(m, cx + i, cy + j).Ramp = true;
+                        At(m, cx + i, cy + j).Ramp = target;
     }
 
     // ================= 纹理组 =================
