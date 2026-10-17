@@ -218,13 +218,14 @@ exit=0
 | 项 | 内容 | 位置 |
 |---|---|---|
 | 荒芜笔刷真实证据 | H1 → J1 = **149 角点** light 0→1；J1 → J2 = 0（重复点击无操作） | CORRECTIONS.md §11.4；fixtures H1.w3e/J1.w3e |
-| 纹理刷不触碰荒芜位（**B 级**） | ghidra_286a60.c:174/183/188：只写 yte8 & 0xf（纹理）与 yte9 & 0x1f（地表变体）； xffbf/0xfffb 作用在**字节 12**（NOTH 标志） | CORRECTIONS.md §12 |
+| **纹理刷会清 blight（B 级）** | `ghidra_286a60.c:190,192` → `word[+0x0c] &= 0xfffb`（清 bit2 = blight）；另 `:174` 写 `byte8 & 0xf`（纹理）、`:183/:188` 写 `byte9 & 0x1f`（地表变体） | `CORRECTIONS.md` **§19**（§12 已被推翻） |
 | 全 suite 越界检查 | 63 条用例按**官方未改字段**自动生成 
 ochange；Get() 扩到 w3e **全部 11 字段**；实测 **0 越界** | CORRECTIONS.md §13 / §13.5 |
 | 逐字段漏改清单 | 自动生成 MISSED-CHANGES.md（用例/字段/坐标/官方值/实现值/改前值） | MISSED-CHANGES.md |
 | **坡道修复** | 补「四邻全等 ⇒ 3×3」分支：Y10_ramp_made **0/9 → 9/9**；已登记差异 **58 → 49**；未登记 0 | CORRECTIONS.md §16 |
 | 坡道方向来源（**B 级**） | (sx,sy) 来自**点击在角点内的亚格偏移**（ghidra_27d450.c:105-112 浮点坐标与 ≈0.5 比较），**不是拖拽** | CORRECTIONS.md §17 |
-| 坡道亚格实验脚本 | 四亚格点击 + 前置自检 + 三态判定（INCONCLUSIVE/NEGATIVE/POSITIVE），无需拖拽 | amp-subgrid-experiment.ps1 |
+| 坡道亚格实验脚本 | 四亚格点击 + 前置自检 + 三态判定（INCONCLUSIVE/NEGATIVE/POSITIVE），无需拖拽 | 
+amp-subgrid-experiment.ps1 |
 | 反面实验记录 | 水旗外扩 + size+2 使多例大幅变差 ⇒ **已回退**；据此推断官方 deep 改动集恰为 17 点、规则必须更窄 | CORRECTIONS.md §15 |
 
 **当前回归基线（最新）**
