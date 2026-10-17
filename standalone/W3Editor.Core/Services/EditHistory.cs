@@ -110,6 +110,14 @@ public sealed class EditHistory
     public (int X0, int Y0, int X1, int Y1)? LastAffectedRegion(W3EMap map) =>
         _lastApplied?.AffectedRegion(map);
 
+    /// <summary>
+    /// 笔画**进行中**的实际改动范围（与 <see cref="BeginStroke"/> 的快照比较得出）。
+    /// 任务 7：刷新必须覆盖"实际变化"，包含传播与坡度处理影响的角点——
+    /// 这些点通常会**超出笔刷足迹**（例如悬崖传播 85 个角点 vs 3×3 足迹）。
+    /// </summary>
+    public (int X0, int Y0, int X1, int Y1)? PendingAffectedRegion(W3EMap map)
+        => _pending == null ? null : TerrainStrokeCommand.FromSnapshots(_pending, map)?.AffectedRegion(map);
+
     public bool LastTouchedPlacements => _lastApplied?.TouchesPlacements ?? false;
     public bool LastTouchedPathing => _lastApplied?.TouchesPathing ?? false;
     public bool LastTouchedRegions => _lastApplied?.TouchesRegions ?? false;

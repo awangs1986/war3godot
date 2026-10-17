@@ -294,3 +294,55 @@ cd standalone/W3Editor && dotnet build -v q   →  build exit=0 ✓
   3. 断言 B 中该集合 ramp 位 1→0，且其它字段（h/w/tex/blight/boundary/变体/层级/类型）不变
   4. 再试右键同点 → 断言 0 变化（对应官方 `Y10_ramp_right`）
 - `ConstrainRampToLine` 现已无调用点（保留未删，待确认无其它用途后再清理）。
+
+---
+
+## 10. 任务 7：按实际改动范围刷新（本轮）
+
+### 10.1 缺口
+
+`MainWindow.ApplyBrushAt` 用固定矩形刷新：`reach = _brush.Radius + 6`，然后
+`GlView.Scene.NotifyCornersChanged(floor(cx)-reach, …)` ✗ —— 这是**估计**范围，不是实际改动范围。
+
+### 10.2 证据：传播/坡度确实会超出足迹（必须刷新范围外角点）
+
+官方存档用例（harness A 层输出，同一次运行）：
+
+| 用例 | 官方改动角点数 | 笔刷足迹（size=3 圆形） |
+|---|---|---|
+| `base → cliff_c+1_s3` | **50** | ≈13 |
+| `base → P_c+2_s1_x3` | **21** | 1 |
+| `base → P_c+2_s3_x3` | **157 相关 / 137 已实现一致** | ≈13 |
+
+⇒ 传播影响的角点数**远大于足迹** ✓；若只刷新 `Radius+6`，边缘传播改动**不会立即显示** ✗（正是任务 7 要求修的点）。
+
+### 10.3 修复
+
+1. `EditHistory` 新增**笔画进行中**的实际改动范围：
+   ```csharp
+   public (int X0, int Y0, int X1, int Y1)? PendingAffectedRegion(W3EMap map)
+       => _pending == null ? null : TerrainStrokeCommand.FromSnapshots(_pending, map)?.AffectedRegion(map);
+   ```
+   —— 与 `BeginStroke` 的快照对比得出，天然包含传播/坡度写入的角点 ✓（撤销记录本来就是整图快照差分 ✓，
+   所以"撤销覆盖实际变化"这一半**原本就满足** ✓，缺的只是刷新范围 ✓）
+2. `ApplyBrushAt` 改为：刷新区域 = 笔刷足迹 ∪ **实际改动范围**：
+   ```csharp
+   var actual = _history.PendingAffectedRegion(map);
+   … rx0 = Math.Min(rx0, a.X0); … rx1 = Math.Max(rx1, a.X1); …
+   GlView.Scene.NotifyCornersChanged(rx0, ry0, rx1, ry1);
+   ```
+   —— 保留足迹是为了让"预览尺寸"与刷新一致（无改动时仍刷新光标下的足迹）✓
+
+### 10.4 验证
+
+| 项 | 结果 |
+|---|---|
+| `standalone/W3Editor` 编译 | **exit=0** ✓ |
+| 回归（`--no-incremental`） | **exit=0** ✓，65 用例、45/45、58 登记、0 未登记 |
+| 数据一致性 | 有官方存档逐点比对 ✓ |
+| **画面一致性** | **未验证** ✗ —— 需要交互式：编辑后观察传播区是否立即更新，并与"保存→重开"后的画面比对 |
+
+### 10.5 尚未完成
+
+- **画面一致性**（编辑后 vs 保存重开）必须真机截图比对，尚未执行 ✗
+- 笔刷预览尺寸与实际覆盖规则的一致性：预览仍用 `_brush.Radius`（= 足迹 ✓），但**未与官方足迹形状逐点核对**（`footprint` 用例只覆盖 tex 字段）

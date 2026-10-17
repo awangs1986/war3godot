@@ -711,10 +711,18 @@ public partial class MainWindow : Window
         if (map == null || _stroke == null) return;
         TerrainBrush.Apply(map, cx, cy, _brush, _strokeErase, _stroke, frameDelta);
         _strokeApplied = true;
-        // HiveWE footprint = UI size corners; normalize can reach outside
+        // 任务 7：刷新范围取**实际改动范围**（含传播/坡度影响的角点），而不是固定的 Radius+6 矩形。
+        // 优先用撤销记录里"笔画进行中的实际改动范围"；没有改动时退回笔刷足迹（保持预览一致）。
+        var actual = _history.PendingAffectedRegion(map);
         int reach = _brush.Radius + 6;
-        GlView.Scene.NotifyCornersChanged((int)MathF.Floor(cx) - reach, (int)MathF.Floor(cy) - reach,
-            (int)MathF.Ceiling(cx) + reach + 1, (int)MathF.Ceiling(cy) + reach + 1);
+        int rx0 = (int)MathF.Floor(cx) - reach, ry0 = (int)MathF.Floor(cy) - reach;
+        int rx1 = (int)MathF.Ceiling(cx) + reach + 1, ry1 = (int)MathF.Ceiling(cy) + reach + 1;
+        if (actual is { } a)
+        {
+            rx0 = Math.Min(rx0, a.X0); ry0 = Math.Min(ry0, a.Y0);
+            rx1 = Math.Max(rx1, a.X1); ry1 = Math.Max(ry1, a.Y1);
+        }
+        GlView.Scene.NotifyCornersChanged(rx0, ry0, rx1, ry1);
         if (!GlView.IsVisible)
             RenderViewport();
     }
