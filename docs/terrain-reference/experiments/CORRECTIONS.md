@@ -191,3 +191,39 @@ Stroke(map, ccx, ccy, size, s, op, stroke);
 
 - **松开后再次点击 = 线性累加**：需要"两次点击"的官方 fixture（当前只有单击与 3 次点击的悬崖用例）⇒ 用 P0-1 的行为快照做一致性检查，但**不作为通过依据**
 - 跨角点拖动后返回原角点：官方输入记录尚未取得 ⇒ 保持 `未决`
+
+---
+
+## 8. 任务 5：`nochange`（不应变化的字段）检查（本轮，含一个真实缺陷发现）
+
+### 8.1 机制
+
+用例可声明 `nochange: [字段…]`（官方在这些字段上**完全无变化**）。harness 在施加后逐角点比较实现结果与 before：
+**未登记**的副作用 ⇒ `HardFail`（退出非零）；已登记项（`known-differences.json` 的 `nochange` 段）⇒ 打印但不算失败。
+
+### 8.2 破坏验收
+
+| 破坏 | 结果 |
+|---|---|
+| 浅水笔刷顺手 `Blight = true`（**未登记**） | **exit=1** ✓ `用例 Y7_sh2: 字段 blight 在 (31,32) 被执行后改变（0 → 1）… 出现了不应有的副作用` |
+| 浅水笔刷顺手翻转 `Ramp`（**未登记**） | **exit=1** ✓ `字段 ramp 在 (31,32) 被执行后改变（0 → 1）` |
+| 恢复（`--no-incremental` 强制重建） | **exit=0** ✓，45/45、58 登记、0 未登记 |
+
+> 注意：**增量构建会复用旧 DLL**，破坏测试后必须 `dotnet build --no-incremental`（本轮踩到一次）。
+
+### 8.3 检查立刻发现的真实缺陷（已登记，待修）
+
+给 `Y7_sh2` 开启 `nochange` 后，基线代码就报：
+
+```
+用例 Y7_sh2: 字段 blight 在 (31,32) 被执行后改变（0 → 1）
+  before: h=8192 w=8192 tex=0 ramp=0 blight=0 water=1 bound=0 gvar=17 cvar=2 L=1 ct=1
+  after : h=8192 w=8192 tex=0 ramp=0 blight=1 water=1 bound=0 gvar=17 cvar=0 L=1 ct=1
+```
+
+- 两条官方 fixture（`Y7_sh1`/`Y7_sh2`）在该角点**逐字节相同**（`00200020405111`）⇒ 官方无任何变化 ✓
+- 我们的实现：`byte5` 的悬崖变体 `2 → 0`（`Cliff()` 里的 `CliffVariation = Rng.Next(4)`，`TerrainBrush.cs:443/479`），且 `byte4` 出现 `0x20` 位
+- 已登记到 `known-differences.json.nochange`（status=实现缺陷），因此不再掩盖其它新缺陷 ✓
+- **根因待查**（水刷为何走到重写变体的路径），下一轮继续
+
+回归后：`已登记差异 59 点`（58 + 本条 nochange）✓、`未登记 0` ✓、`exit=0` ✓

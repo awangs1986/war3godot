@@ -147,6 +147,13 @@ foreach (var e in known)
 }
 var knownUsed = new HashSet<string>();
 var knownHits = new List<string>();
+var nochangeAllow = new HashSet<string>();
+{
+    using var kd2 = JsonDocument.Parse(File.ReadAllText(knownPath));
+    if (kd2.RootElement.TryGetProperty("nochange", out var ncArr))
+        foreach (var e in ncArr.EnumerateArray())
+            nochangeAllow.Add($"{e.GetProperty("case").GetString()!.Split(':').Last()}|{e.GetProperty("field").GetString()}|{e.GetProperty("x").GetInt32()}|{e.GetProperty("y").GetInt32()}");
+}
 var unregistered = new List<string>();
 var diffLines = new List<string>();
 
@@ -258,6 +265,41 @@ for (int ci = 0; ci < cases.Count; ci++)
             foreach (var o in applyList) RunOp(o);
     }
     else RunOp(op);
+
+    // 「不应变化的字段」检查（任务 5）：用例可声明 nochange = [字段…]，
+    // 表示官方在这些字段上**没有**任何变化；实现若在任意角点改动了它们 ⇒ 硬失败。
+    // 这能抓住"预期无操作/只影响某些字段的操作产生了副作用"的缺陷。
+    if (c.TryGetProperty("nochange", out var ncl))
+    {
+        foreach (var nf in ncl.EnumerateArray().Select(e => e.GetString()!))
+        {
+            for (int yy = 0; yy < P.Height; yy++)
+                for (int xx = 0; xx < P.Width; xx++)
+                {
+                    int got = Get(P.Corners[yy * P.Width + xx], nf);
+                    int org = Get(A.Corners[yy * P.Width + xx], nf);
+                    if (got != org)
+                    {
+                        // 已登记的实现缺陷（known-differences.json 的 nochange 段）：列出但不判失败；
+                        // 未登记的副作用一律硬失败（任务 5）。
+                        if (nochangeAllow.Contains($"{after}|{nf}|{xx}|{yy}"))
+                        {
+                            knownHits.Add($"- [nochange:{after}] ({xx},{yy}) {nf}: {org} → {got} — 状态=已登记的副作用缺陷");
+                            continue;
+                        }
+                        var ca = A.Corners[yy * P.Width + xx];
+                        var cp = P.Corners[yy * P.Width + xx];
+                        string Dump(W3Corner k) =>
+                            $"h={TerrainBrush.ToRaw(k.GroundHeight)} w={TerrainBrush.ToRaw(k.WaterHeight)} "
+                            + $"tex={k.GroundTexture} ramp={(k.Ramp ? 1 : 0)} blight={(k.Blight ? 1 : 0)} "
+                            + $"water={(k.Water ? 1 : 0)} bound={(k.Boundary ? 1 : 0)} "
+                            + $"gvar={k.GroundVariation} cvar={k.CliffVariation} L={k.LayerHeight} ct={k.CliffTexture}";
+                        HardFail($"用例 {after}: 字段 `{nf}` 在 ({xx},{yy}) 被执行后改变（{org} → {got}），而官方该字段不变 ⇒ 出现了不应有的副作用\n"
+                            + $"    before: {Dump(ca)}\n    after : {Dump(cp)}");
+                    }
+                }
+        }
+    }
 
     string caseKey = $"{algo}:{after}";
     caseKeyOf[caseKey] = ci;

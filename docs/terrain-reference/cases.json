@@ -614,6 +614,12 @@
   "no_reference": true,
   "apply": [
    "shallow"
+  ],
+  "nochange": [
+   "tex",
+   "ramp",
+   "blight",
+   "bound"
   ]
  },
  {
@@ -701,6 +707,15 @@
   "no_reference": true,
   "apply": [
    "ramp"
+  ],
+  "nochange": [
+   "h",
+   "w",
+   "water",
+   "ct",
+   "tex",
+   "blight",
+   "bound"
   ]
  },
  {
