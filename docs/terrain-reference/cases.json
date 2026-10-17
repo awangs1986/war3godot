@@ -16,7 +16,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -36,7 +39,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -56,7 +62,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -76,7 +85,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -94,7 +106,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -114,7 +128,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -135,7 +152,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -155,7 +175,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -175,7 +198,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -195,7 +221,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -215,7 +244,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -235,7 +267,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -255,7 +290,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -276,7 +314,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -297,7 +337,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -318,7 +360,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -354,7 +398,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -377,7 +423,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -398,7 +446,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -419,7 +469,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -440,7 +492,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -461,7 +515,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -481,7 +537,10 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -501,7 +560,10 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -521,7 +583,10 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -541,7 +606,10 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -562,7 +630,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -581,7 +652,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -600,7 +673,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -617,7 +692,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -634,7 +711,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -655,7 +734,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -676,7 +757,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -697,7 +780,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -716,7 +801,10 @@
    "ct",
    "ramp",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -736,7 +824,10 @@
    "tex",
    "ramp",
    "blight",
-   "water"
+   "water",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -757,7 +848,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -778,7 +871,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -801,7 +896,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -821,7 +918,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -841,7 +941,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -861,7 +964,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -881,7 +987,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -899,7 +1008,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -919,7 +1030,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -941,7 +1054,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -963,7 +1079,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -985,7 +1104,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1019,7 +1141,10 @@
    "ct",
    "ramp",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1042,7 +1167,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1065,7 +1192,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1088,7 +1217,9 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1114,7 +1245,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1134,7 +1268,9 @@
    "tex",
    "ramp",
    "blight",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1153,7 +1289,9 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1172,7 +1310,9 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1191,7 +1331,9 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1210,7 +1352,9 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1231,7 +1375,9 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "edge"
   ]
  },
  {
@@ -1257,7 +1403,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1292,7 +1441,10 @@
    "tex",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1337,7 +1489,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  },
  {
@@ -1382,7 +1537,10 @@
    "ramp",
    "blight",
    "water",
-   "bound"
+   "bound",
+   "gvar",
+   "cvar",
+   "edge"
   ]
  }
 ]

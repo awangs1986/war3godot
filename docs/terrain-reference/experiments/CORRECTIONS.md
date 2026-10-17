@@ -471,3 +471,33 @@ run exit=0
 `ghidra_286a60.c:174/183/188` 表明纹理笔刷只写 `byte8 & 0xf` 与 `byte9 & 0x1f`（不触碰 `0x20` 荒芜位）。
 现在这一条**由 6 条 texture 用例的 `nochange` 自动保护** ✓：一旦实现越界写 blight/ramp/water/boundary/h/w/L/ct
 就会立即 `exit=1` ✓。B 级结论 + 自动守卫，两者互相印证 ✓。
+
+### 13.5 越界检查扩展到 w3e 全部字段（round 14）
+
+**问题**：harness 的 `Get()` 原来只认 `h/w/L/ct/tex/ramp/water/blight/bound`，
+`groundVar` / `cliffVar` / `mapEdge` 会走 `_ => 0` ⇒ 这三个字段的 `nochange` **形同虚设** ✗。
+
+**修复**：
+```csharp
+// 任务书 §五：w3e 全部 11 个字段都要能被比较，否则 nochange 对这些字段形同虚设
+"gvar" => c.GroundVariation, "cvar" => c.CliffVariation, "edge" => c.MapEdge ? 1 : 0, _ => 0,
+```
+并按 12 字段全集重新生成 `nochange`（63 条用例）。
+
+**实测：仍然 0 越界**
+```
+build exit=0   越界条目: 0   run exit=0
+A 官方存档已验证：用例 65，逐用例与参考一致 45/45，已登记差异 58 点，未登记差异 0 点
+```
+
+**新字段守卫有效性（故意破坏）**：把 `At()` 改成顺手 `GroundVariation = (x+1)&0x1F`
+
+```
+破坏后 run exit=1
+- 用例 raise_s1_c_h08: 字段 `gvar` 在 (29,30) 被执行后改变（17 → 18），而官方该字段不变 ⇒ 出现了不应有的副作用
+- 用例 raise_s1_c_h08: 字段 `gvar` 在 (30,30) 被执行后改变（0 → 2）…
+- 用例 raise_s1_c_h08: 字段 `gvar` 在 (31,30) 被执行后改变（4 → 7）…
+恢复后 run exit=0（45/45、58 登记、0 未登记）
+```
+
+⇒ 越界检查现在真正覆盖 **w3e 全部 11 个字段** ✓（`byte4` 5 位 + `byte5` 两组 + `byte6` 两组 + 高度/水面/边缘）

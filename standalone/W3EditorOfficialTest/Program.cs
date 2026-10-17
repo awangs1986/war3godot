@@ -129,7 +129,9 @@ int Get(W3Corner c, string f) => f switch
     "L" => c.LayerHeight,
     "ct" => c.CliffTexture,
     "tex" => c.GroundTexture,
-    "ramp" => c.Ramp ? 1 : 0, "water" => c.Water ? 1 : 0, "blight" => c.Blight ? 1 : 0, "bound" => c.Boundary ? 1 : 0, _ => 0,
+    "ramp" => c.Ramp ? 1 : 0, "water" => c.Water ? 1 : 0, "blight" => c.Blight ? 1 : 0, "bound" => c.Boundary ? 1 : 0,
+    // 任务书 §五：w3e 全部 11 个字段都要能被比较，否则 nochange 对这些字段形同虚设
+    "gvar" => c.GroundVariation, "cvar" => c.CliffVariation, "edge" => c.MapEdge ? 1 : 0, _ => 0,
 };
 BrushShape ShapeOf(string s) => s == "square" ? BrushShape.Square : BrushShape.Circle;
 void Stamp(W3EMap m, int cx, int cy, BrushSettings s)
