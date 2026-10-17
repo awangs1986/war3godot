@@ -661,6 +661,30 @@ Console.WriteLine("### C.1 语义自检\n");
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.CliffRaise1, Radius = 3, CliffTextureId = 1 });
     Check("悬崖 T=16 整笔拒绝：地图字节全等", m.SaveBytes().SequenceEqual(before));
 
+    // ===== 审查 P1：把 A 级坡道规则编码为失败断言（不依赖 GUI 复现性）=====
+    {
+        // (a) 对角 +1 ⇒ 3×3 共 9 点（A 级：ramp_single_m10_m10 等 4 组单点，抬高角点为中心 SW 对角）
+        var md = W3EMap.Load(Fix("base"));
+        md.Corners[(31 + 1) * md.Width + (29 - 1)].LayerHeight = 3;   // SW 对角 (28,32) = base+1
+        Stamp(md, 29, 31, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
+        int n9 = md.Corners.Count(x => x.Ramp);
+        Check($"对角 +1 ⇒ 斜坡写 9 点（实测 {n9}）", n9 == 9);
+
+        // (b) 对角 +2 ⇒ 同样 9 点（A 级：Y10_step_c2 → Y10_ramp_made，SW 对角 L=4、中心 L=2）
+        var md2 = W3EMap.Load(Fix("base"));
+        md2.Corners[(31 + 1) * md2.Width + (32 - 1)].LayerHeight = 4;  // SW 对角 (31,32) = base+2
+        Stamp(md2, 32, 31, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
+        int n9b = md2.Corners.Count(x => x.Ramp);
+        Check($"对角 +2 ⇒ 斜坡写 9 点（实测 {n9b}）", n9b == 9);
+
+        // (c) 四邻 +1（无对角更高）⇒ 3 共线（A 级：R1/R3/NP2 各 3/3）
+        var md3 = W3EMap.Load(Fix("base"));
+        md3.Corners[28 * md3.Width + 33].LayerHeight = 3;             // S 邻 (33,28) = base+1
+        Stamp(md3, 33, 27, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
+        int n3 = md3.Corners.Count(x => x.Ramp);
+        Check($"四邻 +1 ⇒ 斜坡写 3 点（实测 {n3}）", n3 == 3);
+    }
+
     // ===== 审查 P0：纯平地单击斜坡不得写 ramp（曾误写 9 点 ✗） =====
     {
         var flat = W3EMap.Load(Fix("base"));

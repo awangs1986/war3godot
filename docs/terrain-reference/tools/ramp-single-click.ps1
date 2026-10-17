@@ -15,7 +15,8 @@ param(
   [string]$Out = "",
   [int]$PX = 420, [int]$PY = 420,       # 基准点（屏幕像素）
   [int]$GDx = 40,                        # Spacing 模式：第二点的横向偏移像素
-  [int]$DX = 0, [int]$DY = 0             # SubCorner 模式：斜坡单击相对基准点的偏移像素
+  [int]$DX = 0, [int]$DY = 0,            # SubCorner 模式：斜坡单击相对基准点的偏移像素
+  [switch]$RampAfter                        # Spacing 模式下：两处台阶后再单点一次斜坡（用于造 before/after 配对）
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,6 +87,12 @@ ClickAt $PX $PY; Start-Sleep -Milliseconds 800
 if ($Mode -eq 'Spacing') {
   ClickAt ($PX + $GDx) $PY; Start-Sleep -Milliseconds 800
   Write-Host "  已在 P 与 P+$GDx 各升高一层"
+  if ($RampAfter) {
+    $hRamp2 = PickAx 'clf' '斜坡'
+    Write-Host ("  斜坡={0} → '{1}'" -f $hRamp2, (L $lbls['clf']))
+    ClickAt $PX $PY; Start-Sleep -Milliseconds 1500
+    Write-Host "  已在 P 单点一次斜坡（与 spacing 图构成 before/after）"
+  }
 } else {
   $hRamp = PickAx 'clf' '斜坡'
   Write-Host ("  斜坡={0} → '{1}'" -f $hRamp, (L $lbls['clf']))
