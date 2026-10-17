@@ -560,8 +560,14 @@ public static class TerrainBrush
 
     /// <summary>
     /// 覆盖集合（遵守形状）写纹理下标 + 重随变体：约 91% 落 {0,4,8,12,16,17}，
-    /// 其余均匀 1..15（12.10）。官方不清 blight（与旧 HiveWE 版不同）。
-    /// 1.27 写入函数未定位（仅 1.32 存档 51/51 覆盖范围验证）。
+    /// 其余均匀 1..15（12.10）。
+    ///
+    /// **会清除 blight**：A 级实测（1.32 官方编辑器，落点固定、每步以"标题变脏"确认落笔）：
+    ///   同一角点 `D0→D3` 荒芜落笔 ⇒ `byte[5] bit2/bit3` 置位；
+    ///   异纹理（岩石）覆盖 `D5→D6` ⇒ 这两位**被清零**（样本 `00200020000e10 → 00200020030210`）；
+    ///   同纹理重涂则不改变任何位（只有 variation 位增加）。
+    /// 与 `ghidra_286a60.c:190,192`（`uVar6 = 0xfffb` → `flags &= uVar6`）的 B 级证据一致。
+    /// 证据见 `experiments/VERIFICATION-MATRIX.md` §14.9。
     /// </summary>
     internal static void Texture(W3EMap m, int cx, int cy, int size, BrushShape shape, BrushSettings s)
     {
@@ -573,6 +579,7 @@ public static class TerrainBrush
             var c = At(m, x, y);
             c.GroundTexture = s.TextureIndex;
             c.GroundVariation = Rng.NextDouble() < 0.91 ? common[Rng.Next(common.Length)] : Rng.Next(1, 16);
+            c.Blight = false;   // A 级实测：异纹理覆盖会清荒芜位（§14.9）
         }
     }
 
