@@ -779,6 +779,19 @@ Console.WriteLine($"- A 官方存档已验证：用例 {cases.Count}，逐用例
 Console.WriteLine($"- B 二进制分析支持：断言 {bChecks} 条 —— 一致 {bPass}、不一致 {bFail}、已登记不一致 {bRegistered}、未决 {bPending.Count}（逐条见上表）");
 Console.WriteLine($"- C 实现自检：语义自检 {sanityFail} 项失败；行为快照仅记录现状，不作为通过依据");
 
+// 任务书 §三/§五 要求：明确比较对象，并区分「无新增回归」与「全部行为正确」。
+Console.WriteLine();
+Console.WriteLine("- 比较对象：**序列化后的存档字节**——实现先在内存里施加笔刷，再 `SaveBytes()` → `LoadBytes()` 得到 P，");
+Console.WriteLine("  然后逐角点比较解码字段（不是比较内存对象引用，也不是只看脏标记）。");
+bool allClean = unregistered.Count == 0 && knownHits.Count == 0 && hardFailures.Count == 0;
+if (allClean)
+    Console.WriteLine("- 结论：**全部行为正确**（无未登记差异，且无任何已登记差异残留）");
+else if (unregistered.Count == 0)
+    Console.WriteLine($"- 结论：**无新增回归**（未登记差异 0），但仍有 **{knownHits.Count} 处已登记差异**（状态见 A.3），"
+        + "因此**不等于**全部行为正确");
+else
+    Console.WriteLine($"- 结论：**存在回归**（未登记差异 {unregistered.Count} 处），必须修复");
+
 if (hardFailures.Count > 0)
 {
     Console.WriteLine();
