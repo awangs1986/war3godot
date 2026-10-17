@@ -559,10 +559,9 @@ public static class TerrainBrush
         var diag = new[] { (1, 1), (1, -1), (-1, 1), (-1, -1) }
             .Where(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight == L + 1)
             .ToList();
-        bool anyDiffer4 = dirs4.Any(d => Inside(m, cx + d.Item1, cy + d.Item2) && At(m, cx + d.Item1, cy + d.Item2).LayerHeight != L);
-        // 官方实测：**四邻全部等于中心 L**（无任何层差）且无对角高 ⇒ 写 3×3（9 点，Y10_ramp_made 9/9 ✓）。
-        // 若存在 L−1 的邻点（Y9_ramp_n0/n1）官方只写 3 共线，而该轴由**拖拽方向**决定、单点信息不足 ⇒ 不在此处猜，保持不动。
-        if (diag.Count == 1 || (diag.Count == 0 && !anyDiffer4))
+        // 只处理"恰好一个对角更高 1 层"的情形（A 级：Y10_ramp_made 的 3×3 实际命中的就是本分支，其四邻全等但**对角**为 L+1）。
+        // 「四邻全等且无对角更高」是否写 3×3 **未验证**：审查指出纯平地单击不应产生 ramp（当前实现曾误写 9 点 ✗），故不再猜。
+        if (diag.Count == 1)
             for (int j = -1; j <= 1; j++)
                 for (int i = -1; i <= 1; i++)
                     if (Inside(m, cx + i, cy + j))

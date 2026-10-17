@@ -661,6 +661,38 @@ Console.WriteLine("### C.1 语义自检\n");
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.CliffRaise1, Radius = 3, CliffTextureId = 1 });
     Check("悬崖 T=16 整笔拒绝：地图字节全等", m.SaveBytes().SequenceEqual(before));
 
+    // ===== 审查 P0：纯平地单击斜坡不得写 ramp（曾误写 9 点 ✗） =====
+    {
+        var flat = W3EMap.Load(Fix("base"));
+        int rBefore = flat.Corners.Count(x => x.Ramp);
+        Stamp(flat, 31, 32, new BrushSettings { Op = BrushOp.Ramp, Radius = 1 });
+        int rAfter = flat.Corners.Count(x => x.Ramp);
+        Check($"P0 纯平地单击斜坡不写 ramp（{rBefore} → {rAfter}）", rAfter == rBefore);
+    }
+
+    // ===== 审查 P1：把 A 级证据对接入自动比较（荒芜 → 异纹理覆盖）=====
+    {
+        var bo = W3EMap.Load(Fix("BlightOnly"));
+        var bt = W3EMap.Load(Fix("BlightThenTex"));
+        int cleared = 0, tgt = -1;
+        for (int i = 0; i < bo.Corners.Length; i++)
+            if (bo.Corners[i].Blight && !bt.Corners[i].Blight) { cleared++; tgt = i; }
+        int bx = tgt % bo.Width, by = tgt / bo.Width;
+        Check($"A 级证据对 荒芜→泥土 清除 blight 恰 1 点且位于 ({bx},{by})（应为 27,32）", cleared == 1 && bx == 27 && by == 32);
+        // 同理：荒芜 → 荒芜（重复荒芜）不清除
+        var bw = W3EMap.Load(Fix("BlightTwice"));
+        int cleared2 = 0;
+        for (int i = 0; i < bo.Corners.Length; i++)
+            if (bo.Corners[i].Blight && !bw.Corners[i].Blight) cleared2++;
+        Check($"A 级证据对 荒芜→荒芜 不清除 blight（清除数 {cleared2}，应为 0）", cleared2 == 0);
+        // 我方实现：在 BlightOnly 上用当时的泥土下标覆盖 (27,32)，该点 blight 必须为 false
+        var impl = W3EMap.LoadBytes(bo.SaveBytes());
+        int texIdx = bt.Corners[32 * bt.Width + 27].GroundTexture;
+        Stamp(impl, 27, 32, new BrushSettings { Op = BrushOp.Texture, TextureIndex = texIdx, Radius = 1 });
+        Check($"我方实现 泥土(#{texIdx})覆盖 (27,32) 后 blight = false",
+              !impl.Corners[32 * impl.Width + 27].Blight);
+    }
+
     m = W3EMap.Load(Fix("base"));
     m.Corners[32 * m.Width + 31].LayerHeight = 0;
     Stamp(m, 31, 32, new BrushSettings { Op = BrushOp.WaterShallow, Radius = 3, CliffTextureId = 1 });
