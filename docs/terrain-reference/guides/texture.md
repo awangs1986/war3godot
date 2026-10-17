@@ -5,7 +5,15 @@
 
 
 ## 原理
-覆盖集合内 groundTexture = 所选下标，并重新随机变体。贴图不影响层级、水、坡道。
+覆盖集合内 groundTexture = 所选下标，并重新随机变体。贴图不影响层级、水、坡道、荒芜、边界。
+
+**B 级依据（逐行可核）**：`experiments/ghidra/ghidra_286a60.c`
+- `:174` `auStack_d0[8] = … ^ (… ^ auStack_d0[8]) & 0xf` ⇒ 只写 `byte4` **低 4 位**（纹理索引），`0x10 坡道 / 0x20 荒芜 / 0x40 水 / 0x80 边界` 原样保留
+- `:183/:188` `auStack_d0[9] = … & 0x1f` ⇒ 只写 `byte5` **低 5 位**（地表变体），高 3 位悬崖变体保留
+- `:192` `auStack_d0._12_2_ &= 0xfffb` ⇒ 掩码作用在**字节 12**（NOTH 标志），与 byte4 无关
+- 回归侧由 6 条 `texture` 用例的 `nochange` 自动保护：一旦越界写 blight/ramp/water/boundary/h/w/L/ct 立即 `exit=1` ✓
+
+> A 级（真机"先画荒芜→同角点异纹理覆盖"四组存档）**仍未执行** —— 见 `experiments/CORRECTIONS.md` §11.5 / §12。
 
 ## 一步步的数值推演
 s3 圆形 13 个点改成 tex1；方形 25 个点。变体约 91% 落在 {0,4,8,12,16,17}。
