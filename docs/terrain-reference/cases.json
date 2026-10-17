@@ -727,5 +727,75 @@
   "cy": 31,
   "note": "P0-2 Shift 点击 = 移除同组 9 个 ramp 旗（1→0）",
   "no_reference": true
+ },
+ {
+  "algo": "raise",
+  "op": "raise",
+  "before": "base",
+  "size": 1,
+  "cx": 31,
+  "cy": 32,
+  "shape": "circle",
+  "stroke": "same",
+  "after": "S_hold",
+  "path": [
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    0
+   ],
+   [
+    0,
+    0
+   ]
+  ],
+  "note": "任务4：同点按住 5 次移动（同一笔画）⇒ 必须与单击完全相同（官方 R1）",
+  "no_reference": true
+ },
+ {
+  "algo": "raise",
+  "op": "raise",
+  "before": "base",
+  "size": 1,
+  "cx": 31,
+  "cy": 32,
+  "shape": "circle",
+  "stroke": "same",
+  "after": "S_jitter",
+  "path": [
+   [
+    0,
+    0
+   ],
+   [
+    0.3,
+    0.2
+   ],
+   [
+    -0.4,
+    0.1
+   ],
+   [
+    0.2,
+    -0.3
+   ],
+   [
+    -0.1,
+    -0.2
+   ]
+  ],
+  "note": "任务4：同角点轻微抖动 5 次（同一笔画）⇒ 必须与单击完全相同（官方 R1）",
+  "no_reference": true
  }
 ]

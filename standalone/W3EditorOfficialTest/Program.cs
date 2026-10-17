@@ -193,7 +193,26 @@ for (int ci = 0; ci < cases.Count; ci++)
     {
         switch (opName)
         {
-            case "raise": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Raise, Radius = size }); break;
+            case "raise":
+                {
+                    var rs = new BrushSettings { Op = BrushOp.Raise, Radius = size };
+                    if (c.TryGetProperty("path", out var pth))
+                    {
+                        // 笔画事件重放：一次按下 → 多次移动 → 抬起。
+                        // stroke=same ⇒ 全程复用同一个 BrushStroke（同角点重复移动不应额外施加）；
+                        // stroke=new  ⇒ 每次移动都新建笔画（等价于"多次点击"）。
+                        bool sameStroke = !(c.TryGetProperty("stroke", out var stm)) || stm.GetString() == "same";
+                        var strokeShared = new BrushStroke();
+                        foreach (var pt in pth.EnumerateArray())
+                        {
+                            float ox = (float)pt[0].GetDouble(), oy = (float)pt[1].GetDouble();
+                            var stroke = sameStroke ? strokeShared : new BrushStroke();
+                            TerrainBrush.Apply(P, (float)cx + ox, (float)cy + oy, rs, erase: false, stroke, 0.5f);
+                        }
+                    }
+                    else Stamp(P, cx, cy, rs);
+                    break;
+                }
             case "lower": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Lower, Radius = size }); break;
             case "plateau": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Plateau, Radius = size, Shape = shape }); break;
             case "smooth": Stamp(P, cx, cy, new BrushSettings { Op = BrushOp.Smooth, Radius = size, Shape = shape }); break;

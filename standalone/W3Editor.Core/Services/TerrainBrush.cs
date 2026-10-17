@@ -116,6 +116,14 @@ public sealed class BrushStroke
     public float PlateauWater;
     /// <summary>按下时捕获的悬崖目标层 T = L(按下点)+Δ（未钳制，越界时整笔拒绝）。</summary>
     public int TargetLayer;
+
+    /// <summary>
+    /// 本笔画已经施加过的角点（键 = y*Width+x）。
+    /// 官方实测（FINDINGS R1/R6）：**1 次按下-抬起 = 1 次施加**；同点按住不连发；
+    /// 同角点内抖动不额外施加；拖动不按帧累积。⇒ 同一笔画内同一角点只施加一次。
+    /// 新的一次点击必须新建 <see cref="BrushStroke"/>，否则会被这里抑制。
+    /// </summary>
+    public readonly HashSet<int> AppliedCorners = new();
 }
 
 /// <summary>
@@ -181,6 +189,8 @@ public static class TerrainBrush
             stroke.Initialized = true;
             InitializeStroke(map, ccx, ccy, op, stroke);
         }
+        // 同一笔画内同一角点只施加一次（官方：按下-抬起 1 次施加；抖动/拖动不重复施加）
+        if (!stroke.AppliedCorners.Add(ccy * map.Width + ccx)) return;
         Stroke(map, ccx, ccy, size, s, op, stroke);
     }
 
