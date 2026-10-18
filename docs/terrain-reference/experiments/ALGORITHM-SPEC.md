@@ -1186,3 +1186,36 @@ if ((rec(x,y).flags >> 1 & 1) != 0 && FUN_14027ef50(map,x,y) == 0) {
 
 - 今天 15:11 的 WER 1001 事件是 **`RADAR_PRE_LEAK_64` for `Warcraft III.exe`**（内存泄漏启发式报告），**不是**编辑器崩溃
 - `WorldEdit.exe`（无空格）= **1.27 原版编辑器**，它在 10-17 22:54 有过 `APPCRASH / c0000005 / 模块=WorldEdit.exe / 偏移 0x25f830` 记录 —— 与 Reforged 编辑器无关
+
+---
+
+# 31. ✅ 更正 §30：官方编辑器的**正确入口是 `World Editor Launcher.exe`**
+
+> 由用户指出并确认。§30 里"编辑器无法启动"的结论**作废** —— 原因是**我给的启动路径错了**，不是系统升级所致。
+
+## 31.1 正确/错误入口对照
+
+| 路径 | 作用 | 现象 |
+|---|---|---|
+| `D:\games\W3R\war3r\Warcraft.III.R\World Editor Launcher.exe` | **正确入口**（启动器） | 正常进编辑器 ✅ |
+| `D:\games\W3R\war3r\Warcraft.III.R\_retail_\x86_64\World Editor.exe` | **内层模块**（被启动器拉起） | 单独运行约 13 秒后退出码 0，并拉起 `Warcraft III.exe -launch` ✗ |
+
+⇒ 之前 12 项排查（prefs / shmem / Documents / DNS / 补丁 / GPU 参数 / 工作目录 / 兼容模式 / 进程残留 / exe 完整性 …）全部是**围绕错误入口**做的，因此都得不出结论 ✅
+⇒ 也解释了为什么"昨天还能用"：昨天我自动化时是通过菜单/窗口驱动的实例，不是直接用 `x86_64\World Editor.exe` 裸启动 ✅
+
+## 31.2 教训（写入实验规约）
+
+**今后所有 GUI 实验一律用启动器路径：**
+```
+D:\games\W3R\war3r\Warcraft.III.R\World Editor Launcher.exe
+```
+**不得**再把 `_retail_\x86_64\World Editor.exe` 当入口。
+
+## 31.3 §30 的状态
+
+| 小节 | 状态 |
+|---|---|
+| 30.1 现象（13 s 退出并拉游戏） | ✅ 现象本身真实，但**是错误入口的固有行为**，非故障 |
+| 30.2 12 项排除 | ✅ 实验记录保留（负面知识），但**与故障判断无关** |
+| 30.3 "根因指向 Windows 26300 升级" | ❌ **作废**（入口错误即可完全解释） |
+| 30.4 处置方向（回滚/卸载 KB） | ❌ **不需要** |
