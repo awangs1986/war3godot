@@ -1219,3 +1219,52 @@ D:\games\W3R\war3r\Warcraft.III.R\World Editor Launcher.exe
 | 30.2 12 项排除 | ✅ 实验记录保留（负面知识），但**与故障判断无关** |
 | 30.3 "根因指向 Windows 26300 升级" | ❌ **作废**（入口错误即可完全解释） |
 | 30.4 处置方向（回滚/卸载 KB） | ❌ **不需要** |
+
+---
+
+# 32. ★★★★ 全量扫描（158 个官方存档）新增 8 条结论
+
+> 脚本 `D:\tools\rev\scan_all.py`｜完整输出 `D:\tools\rev\scan_all_out.txt`（176 行）
+> 范围：`fixtures/*.w3e`（114）+ `experiments/artifacts/*.w3e`（44）= **158 个**
+> 全部 **w3e version 11**、**全部 65×65**（⇒ B3「非 65×65」样本仍缺）
+
+## 32.1 新增已验证（8 条）
+
+| # | 结论 | 证据文件 | 数值 |
+|---|---|---|---|
+| 1 | **纹理笔刷足印 = 同规范**（圆形 `r≤size−1`、方形 `(2(size−1)+1)²`） | `T_tex1_s3` / `T_tex1_s3_q` | tex 覆盖 **13 / 25** 点 |
+| 2 | **边界刷 size 3 = 13 点**（此前只知 size 1 的 1 点） | `T_bound_add_s3` | bnd **13** 点，bbox (28..32,30..34) |
+| 3 | **blight 刷 size 8 = 149 点**（同欧氏足迹） | `J1` | blgt **149**、tex 210 |
+| 4 | **blight 刷 size 3 = 13 点** | `Y7_blight_s3` | blgt **13**、tex 40 |
+| 5 | **size 1 悬崖三击 = 9 点**（足印 1 + 3×3 膨胀 8） | `P_c+2_s1_x3` | L **9**、ct **12** |
+| 6 | **坡道 3 点 / 9 点取决于对角线符号，且两方向不对称** | `ramp_single_m10_m10`(9)、`m10_p10`(**3**)、`p10_m10`(**9**)、`p10_p10`(**3**) | 与"对角==中心 ⇒ 不写"一致 ✅ |
+| 7 | **保存→重开不丢 ramp** | `reopen_M0_base` vs `reopen_M0_aftersave` | 两者 ramp 均 **9**，逐点相同 |
+| 8 | **撤销移除 ramp、重做恢复** | `ur_undo`(ramp **0**) vs `ur_redo`(ramp **9**) | ✅ |
+
+## 32.2 一条**重要结构事实**：抬升/降低/噪声/平滑**只改 h，不改 layer**
+
+以下文件在当前基准（L=2 / ct=15 / tex=0）下**变化量为 0**：
+
+```
+raise_s1_c_h08  raise_s2_c_h08  raise_s3_c_h08  raise_s3_c_shift  raise_s5_c_h08  raise_s8_c_h08
+lower_s3_c_h08  noise_s1  noise_s3  noise_s5  noise_s5_b  noise_s5_shift  noise_s8
+b2_smooth_s3  b2_smooth_s5  b2_smooth_s5_shift
+A_pl_base  A_pl_still  A_raise3  H1  S_hold  S_jitter
+X1_h_click1  X1_h_hold2s  X1_h_jitter  X1_restore
+```
+
+⇒ 这些操作改的是 **`h`（raw 高度，15 位）**，**不动 `layer`(byte6 低 4 位)、`ct`、`tex`** ✅
+⇒ 与 §26.1（抬升 `8192→8217` 但 layer 不变）完全一致 ✅
+⇒ **实现要点**：抬升/降低/平滑/噪声写 **h**；`layer` 是**独立字段**，只由"悬崖/水/整平"等操作写 ✅
+（`layer` 与 `h` 的换算关系仍是「1 层 = 128 世界单位」，但**两者不是同一字段**）
+
+## 32.3 顺带确认（与既有结论一致，重复验证）
+
+| 项 | 数值 | 文件 |
+|---|---|---|
+| size 5 悬崖 | **49 / 89** | `cliff_c+1_s5`、`B3` |
+| size 8 悬崖 | **149 / 213** | `cliff_c+1_s8_c` |
+| size 3 方形悬崖 | **25 / 49** | `cliff_c+1_s3_q` |
+| 深水/浅水 size 3 | **13 / 37 / 13** | `water_deep_s3`、`water_shallow_s3`、`Y7_dp1`、`Y7_sh1` |
+| Shift 坡道清除 | `RampShiftRemove` ramp **0** | — |
+| 坡道连点幂等 | `Y10_ramp_again` ramp **9** 同集合 | — |
