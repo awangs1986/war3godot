@@ -1,0 +1,155 @@
+{
+ "steps": [
+  {
+   "name": "Y7_blight_s3",
+   "note": "荒芜 s3 单击",
+   "op": "blight",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_blight_tex1",
+   "note": "纹理1 s3 覆盖荒芜",
+   "op": "texture",
+   "tex": 1,
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_tex3",
+   "note": "纹理3 s3 覆盖",
+   "op": "texture",
+   "tex": 3,
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_tex1_shift",
+   "note": "Shift+纹理1 s3",
+   "op": "texture",
+   "tex": 1,
+   "size": 3,
+   "modifiers": "Shift",
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_sh1",
+   "note": "浅水 s3 单击",
+   "op": "shallow",
+   "size": 3,
+   "clicks": 1,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_sh2",
+   "note": "浅水→浅水（再点一次）",
+   "op": "shallow",
+   "size": 3,
+   "clicks": 2,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_sh_deep",
+   "note": "浅水→深水",
+   "op": "deep",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_sh1_back",
+   "note": "撤销回浅水态（校验）",
+   "op": "undo",
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_dp1",
+   "note": "深水 s3 单击",
+   "op": "deep",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_dp2",
+   "note": "深水→深水（再点一次）",
+   "op": "deep",
+   "size": 3,
+   "clicks": 2,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_dp_sh",
+   "note": "深水→浅水",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_step2",
+   "note": "升高 s3 两次（造台地）",
+   "op": "raise",
+   "size": 3,
+   "clicks": 2,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_step_water",
+   "note": "台地上放浅水",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_prop_r1",
+   "note": "升高 s3 单击（传播基准）",
+   "op": "raise",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_prop_r2",
+   "note": "连点第二次（陡坡）",
+   "op": "raise",
+   "size": 3,
+   "clicks": 2,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_prop_smooth",
+   "note": "陡坡上平滑 s5",
+   "op": "smooth",
+   "size": 5,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_prop_plateau",
+   "note": "陡坡上整平 s3",
+   "op": "plateau",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y7_reopen",
+   "note": "重开地图后立即另存（刷新一致性）",
+   "op": "reopen",
+   "x": 1070,
+   "y": 802
+  }
+ ]
+}

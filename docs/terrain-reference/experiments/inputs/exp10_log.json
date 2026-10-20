@@ -1,0 +1,55 @@
+{
+ "steps": [
+  {
+   "name": "Y10_step_c2",
+   "note": "cliff+2 s1 一击（两层台阶）",
+   "op": "cliff+2",
+   "size": 1,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y10_ramp_diff2",
+   "note": "坡道@两层台阶（期望拒绝）",
+   "op": "ramp",
+   "size": 1,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y10_ramp_made",
+   "note": "建坡道（台阶旁）",
+   "op": "ramp",
+   "size": 1,
+   "dx": 0,
+   "dy": -60
+  },
+  {
+   "name": "Y10_ramp_again",
+   "note": "同点再点一次坡道（移除测试）",
+   "op": "ramp",
+   "size": 1,
+   "dx": 0,
+   "dy": -60,
+   "again": true
+  },
+  {
+   "name": "Y10_ramp_shift",
+   "note": "已有坡道上 Shift 点击",
+   "op": "ramp",
+   "size": 1,
+   "dx": 0,
+   "dy": -60,
+   "modifiers": "Shift"
+  },
+  {
+   "name": "Y10_ramp_right",
+   "note": "已有坡道上右键点击",
+   "op": "ramp",
+   "size": 1,
+   "dx": 0,
+   "dy": -60,
+   "modifiers": "右键"
+  }
+ ]
+}

@@ -1,0 +1,113 @@
+{
+ "steps": [
+  {
+   "name": "Y9_stab_0",
+   "note": "同点两次 raise @ 0,0",
+   "dx": 0,
+   "dy": 0,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_stab_1",
+   "note": "同点两次 raise @ 20,10",
+   "dx": 20,
+   "dy": 10,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_stab_2",
+   "note": "同点两次 raise @ -25,15",
+   "dx": -25,
+   "dy": 15,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_stab_3",
+   "note": "同点两次 raise @ 15,-20",
+   "dx": 15,
+   "dy": -20,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_stab_4",
+   "note": "同点两次 raise @ 30,0",
+   "dx": 30,
+   "dy": 0,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_stab_5",
+   "note": "同点两次 raise @ 0,30",
+   "dx": 0,
+   "dy": 30,
+   "op": "raise",
+   "size": 1
+  },
+  {
+   "name": "Y9_step2",
+   "note": "cliff+1 s1 两次（同点）",
+   "op": "cliff+1",
+   "size": 1,
+   "clicks": 2
+  },
+  {
+   "name": "Y9_ramp_2layer",
+   "note": "坡道@两层台阶角点 + 标记",
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n0",
+   "note": "一层台阶 + 坡道@60,0 + 标记",
+   "dx": 60,
+   "dy": 0,
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n1",
+   "note": "一层台阶 + 坡道@0,60 + 标记",
+   "dx": 0,
+   "dy": 60,
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n2",
+   "note": "一层台阶 + 坡道@-60,0 + 标记",
+   "dx": -60,
+   "dy": 0,
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n3",
+   "note": "一层台阶 + 坡道@0,-60 + 标记",
+   "dx": 0,
+   "dy": -60,
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n4",
+   "note": "一层台阶 + 坡道@110,0 + 标记",
+   "dx": 110,
+   "dy": 0,
+   "op": "ramp",
+   "size": 1
+  },
+  {
+   "name": "Y9_ramp_n5",
+   "note": "一层台阶 + 坡道@0,110 + 标记",
+   "dx": 0,
+   "dy": 110,
+   "op": "ramp",
+   "size": 1
+  }
+ ]
+}

@@ -1,0 +1,57 @@
+{
+ "tileset": null,
+ "view": [
+  1070,
+  802
+ ],
+ "base": "X1_base",
+ "steps": [
+  {
+   "name": "X1_h_click1",
+   "note": "单击一次（hold=0.08s）",
+   "op": "raise",
+   "size": 1,
+   "shape": "circle",
+   "x": 1070,
+   "y": 802,
+   "hold": 0.08,
+   "clicks": 1
+  },
+  {
+   "name": "X1_h_hold2s",
+   "note": "同点按住 2 秒（单次按下-抬起）",
+   "op": "raise",
+   "size": 1,
+   "shape": "circle",
+   "x": 1070,
+   "y": 802,
+   "hold": 2.0,
+   "clicks": 1
+  },
+  {
+   "name": "X1_h_jitter",
+   "note": "按下后在同角点内抖动 ±2px（9 次移动）",
+   "op": "raise",
+   "size": 1,
+   "shape": "circle",
+   "x": 1070,
+   "y": 802,
+   "jitter_px": 2,
+   "moves": 9
+  },
+  {
+   "name": "X1_h_roundtrip",
+   "note": "中心→邻格→中心 各单击一次",
+   "op": "raise",
+   "size": 1,
+   "shape": "circle",
+   "x": 1070,
+   "y": 802,
+   "neighbor": [
+    1106,
+    802
+   ],
+   "clicks": 3
+  }
+ ]
+}
