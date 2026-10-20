@@ -1876,3 +1876,58 @@ world_y = −4096 + idx_y * 128
 | 「同纹理写入是否清 blight」 | **仍未验证** ✗（两次都没造出 blight） |
 | 代码层面的依据 | ✅ 已确认：纹理写入路径存在 `uVar6 = 0xfffb`（清 bit2 = blight），见 §22.2 |
 | 建议 | **A5 降级为可选**；实现按代码结论处理（纹理写入清 blight），待将来有 blight 样本时再补实测 |
+
+---
+
+# 47. ★★★★ A2 批次（1/3）：`FUN_1403BE230` 写记录 + `FUN_140263B00` 脏块收集
+
+> 切片：`D:\tools\rev\f_wr1.exe`（0x1403BE230–0x1403BE600）、`f_wr2.exe`（0x140263B00–0x140263F00）
+
+## 47.1 `FUN_1403BE230(map, cornerIndex, newRec, undoOut, flags)` —— **唯一的角点写入口**
+
+```c
+if (cornerIndex == (newRec[1] & 0x3ffff)) {              // ★ 索引自校验（记录 +4 低 18 位 = 索引）
+    if (FUN_1403be720() == 0) {                          // 未在事务/撤销中
+        if (undoOut) { 分配 0x48 字节、记录旧值、挂到 undo 链 }   // ★ 撤销的唯一来源
+        复制 0x1c 字节整条记录（+0..+0x1b）                        // 整记录覆盖写
+        rec[0x0b] = 原值（保持不变）                              // ★ 运行期"扩散深度"标记不被破坏
+        dirty = (flags & 0x8017) ? (flags | 0x100) : flags
+        FUN_140263B00(map, cornerIndex, &blockList, 1)            // 收集受影响脏块
+        for (b in blockList) b->flags |= dirty                    // 块级脏标记
+        if (dirty & 0x8014) 通知小地图/渲染
+        map[0xb88] = 1                                            // 全局脏标记
+    }
+}
+```
+
+**结论**
+1. 所有笔刷的落笔最终都走这一个写入口 ✅
+2. 写入是**整条 0x1c 记录覆盖**（不是逐字段）✅
+3. **`rec[0x0b]` 被刻意保留** ⇒ 扩散深度标记不会因写入而丢失 ✅（与 §20 的 `depth` 递归一致）
+4. `param_5` 的 `0x8000/0x100/0x10/0x4/0x2/0x1` 是**脏区/刷新原因位**，**不写进 w3e** ✅
+5. 撤销能还原任意笔刷，是因为写入口统一挂 undo ✅
+
+## 47.2 `FUN_140263B00(map, cornerIndex, list, margin)` —— **脏块收集**
+
+```c
+rec = base + idx*0x1c;
+xy  = *(uint*)(rec + 0);                                          // ★ 打包的角点世界坐标
+worldX = (float)((xy >> 0x17 | 0x11e00) << 0xe)  - K;             // X
+worldY = (float)((xy & 0x7fc000 | 0x47800000))   - K;             // Y
+radius = margin * C + 1.0f;                                       // ★ 世界半径 = size*C + 1.0
+bx = clamp((worldX - baseX) * S, 0, (W-1)>>2);                    // 块 = 4×4 格
+by = clamp((worldY - baseY) * S, 0, (H-1)>>2);
+blockIdx = (bxMax+1) * by + bx;  blockPtr = blocksBase + blockIdx*0xFD8;
+收集最多 4 个块（线性去重）
+```
+
+**新增三条硬事实**
+
+| # | 事实 | 依据 |
+|---|---|---|
+| 1 | **记录 `+0` 是"角点世界坐标"的打包值**：X 由高位（`>>0x17`）还原、Y 由 `& 0x7fc000` 还原 | 本函数上述两行 |
+| 2 | **笔刷世界半径 = `size × C + 1.0`** ⇒ 那个 `+1.0` 是**边界包含**项（解释了"刚好 r=size−1 也算在内"） | `fVar18 = margin * _DAT_1412b83d0 + _DAT_1412a0cc4` |
+| 3 | **脏块粒度 = 4×4 格**，每块记录 **0xFD8** 字节，一次落笔最多涉及 **4 个块** | `(W-1)>>2` / `*0xFD8` / `lVar16 = 4` |
+
+> 注：`+1.0` 与 §33 的"足迹半径 = size−1、ct 半径 = size"并不冲突：
+> 世界半径按 `size*128+1` 展开后，落在角点网格上正好覆盖 `r ≤ size−1`（欧氏）✅
