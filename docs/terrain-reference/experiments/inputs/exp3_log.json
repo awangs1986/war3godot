@@ -1,0 +1,63 @@
+{
+ "base": "X1_base",
+ "view": [
+  1070,
+  802
+ ],
+ "steps": [
+  {
+   "name": "X3_raise1",
+   "note": "升高 s1 单击（造台阶）",
+   "op": "raise",
+   "size": 1,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  },
+  {
+   "name": "X3_smooth_s3",
+   "note": "平滑 s3 单击（在台阶上）",
+   "op": "smooth",
+   "size": 3,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  },
+  {
+   "name": "X3_plateau_s3",
+   "note": "整平 s3 单击（点在已抬高的角点上）",
+   "op": "plateau",
+   "size": 3,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  },
+  {
+   "name": "X3_shallow_flat",
+   "note": "浅水 s3 单击（平地）",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  },
+  {
+   "name": "X3_deep_flat",
+   "note": "深水 s3 单击（平地）",
+   "op": "deep",
+   "size": 3,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  },
+  {
+   "name": "X3_shallow_step",
+   "note": "台阶上放浅水（先升高 s1 一次再浅水 s3）",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802,
+   "clicks": 1
+  }
+ ]
+}

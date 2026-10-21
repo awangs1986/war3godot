@@ -1,0 +1,68 @@
+# 1.32 地形算法验证速览（一页交付物）
+
+> ⚠ **本文件部分结论已作废**：G5/G8 的旧解读基于错误的字段解码。
+> 以 **CORRECTIONS.md** 为准（荒芜 = yte4 & 0x20；边界 = yte4 & 0x80）。
+> 统一解析器：	ools/w3e_diff.py（头部偏移按版本+tileset 列表计算）。
+
+> 详细证据链、失败记录与操作手册见 `VERIFICATION-MATRIX.md`（§1–§20）与 `WINDOWS-EXPERIMENT-PIPELINE.md`。
+> 证据等级：**A** = 官方存档/真机实测；**B** = 反编译产物（附行号）；**C** = 实现自检；`未验证` = 明确缺证据。
+
+## 1. 结论总表
+
+| 编号 | 算法 / 问题 | 结论 | 等级 | 依据（可复核） | 复现 |
+|---|---|---|---|---|---|
+| G1 | 地表过渡 `ground-transition` | **未发现独立的持久字段**；发生位置与具体规则**仍未验证** | **推断（未验证）** | w3e 7 字节/角点无冗余；内存记录 0x1c 字段全归属；镜像内 `groundType`/`groundTrans` **0 命中**，`Transition` 仅见于调试库，`CliffTrans` 仅 doodad 路径 | §9 |
+| G2 | 高度插值 `height-interpolation` | 同上：**未发现独立持久字段**，规则未验证 | **推断（未验证）** | 同 G1 | §9 |
+| G3 | 海岸 `shore` | **不是独立算法**：水刷尾部调用悬崖层 `FUN_14026a480` + `size+2` 层处理 | **B** | `ghidra_314880.c:181`（`FUN_140276110(map,2,size+2,…)`）、`:187`（`FUN_14026a480`） | §7/§8 |
+| G4 | 足印形状 `footprint` | 圆/方是**同一实现的两个分支**，**无菱形** | **A** | 官方存档：圆 `s3`=13 点、方 `s3_q`=25 点；实现 13/13、25/25 | §10/§10.1 |
+| G5 | 边界 `boundary` | **放置改 1 个角点** `(33,30) False→True`；**移除改同 1 个角点** `True→False` ⇒ **对称**；不写 layer/cliffType/cliffVar/tex | **A** | `C0/C1/C2.w3e` + `tools/w3e_diff.py` 输出（见 `CORRECTIONS.md` §2） | `python tools/w3e_diff.py C0.w3e C1.w3e` |
+| G5′ | 边界"放置 vs 移除"对称性 | **已确认对称**（同一角点 `(33,30)` 置位/清零） | **A** | 同上 | `python tools/w3e_diff.py C1.w3e C2.w3e` |
+| G6 | 坡道判定规则 | `\|d1\|+\|d2\|==1` → **3 共线**；`\|d1\|==1 && \|d2\|==1` 且**对角角点高度≠点击点** → **3×3**（对角等高则放弃）；集合跨度 `max-min<2`；`bit1==invert` 跳过；`invert=1` 置位 / `invert=0` 清位 | **B** | `ghidra_27d450.c:121-205`（含 `lVar34=3` @169、`lVar34=9` @187、放弃分支 @131/134/172） | §5/§6 |
+| G6′ | 坡道方向约定 `(sx,sy)` | **`未验证`** | — | 26 次单击 + 3 次拖拽未触发写入；曾用 `+x/+y` 猜测实现，ramp 匹配率 66%→18% ⇒ **已回退** | §16/§16.6 |
+| G7 | 深水再点（R19 的 23 点） | 机制已解释：①已有水时水位**按现有水面重算**；②末尾**无条件**跑 `size+2` 层处理与悬崖层 pass | **B** | `ghidra_314880.c:76-84, 181, 187` | §6/§7 |
+| G8 | 荒芜 × 纹理 | **已撤回**：那批存档 `blight=0`（从未设置荒芜），真实变化是 `tex/groundVar/layer/cliffVar/cliffType` ⇒ **荒芜是否被纹理清除 = `未验证`** | `未验证` | `python tools/w3e_diff.py --count D0.w3e D3.w3e D5.w3e D6.w3e`（四份全 0）；`D0→D3` 实际是 `(33,31) tex 0→3` | `CORRECTIONS.md` §1 |
+| — | w3e 坐标映射 | `(x,y) = (i % W, i // W)`，**W=H=65**，头长 **69**（v11，gnd=6/cliff=2） | **A** | 58 条"落笔点已知"用例拟合；8 种正交变换对比，本变换最坏距离 8.1，**单点用例精确 0.0** | §15.1/§15.2 |
+
+## 2. 已落到实现与回归的改动
+
+| 改动 | 状态 | 回归证据 |
+|---|---|---|
+| `TerrainBrush.Texture()` 清除 blight | ✅ 已改（引用 §14.9） | `harness exit=0`；`P0-4 纹理覆盖荒芜：blight=False（期望 False）— 状态=一致` |
+| 坡道方向 | ❌ **未改**（方向约定未验证，禁止按猜测上线） | ramp 层 11/61 的回退记录保留在 §5 |
+| 回归基线 | ✅ 65 用例 / 45-45 一致 / 49 已知差异 / 0 未登记 | `dotnet run` 输出 |
+
+## 3. 仍需补的两项（含确切路径）
+
+1. **G5′ 边界对称性**
+   - 前置：修复真机保存链路（见 §20 与 `WINDOWS-EXPERIMENT-PIPELINE.md` §7 握手序列）
+   - 做法：**同一像素**先放置→保存→再移除→保存，确认 `w3e` 有真实字节差异后再比集合
+2. **G6′ 坡道方向**
+   - 前置：同上；并用 §19.1 的四断言（组 idx=1 / 尺寸1 / 圆形 / 目标模式）保证状态正确
+   - 做法：台阶边缘落笔成功后，按 §15 映射读回形状（3 共线垂直/水平 vs 3×3）⇒ 反解方向
+
+## 4. 一键复现（静态部分）
+
+```cmd
+:: 1) 反编译（需已解密内存镜像）
+python tools\win_capture\dump_pe.py "World Editor.exe" tools\win_capture
+python tools\win_capture\rehydrate.py
+set JAVA_HOME=D:\tools\jdk-21\jdk-21.0.12.1+1
+D:\tools\ghidra_12.1.4_PUBLIC\support\analyzeHeadless.bat D:\tools\gh_proj rea ^
+  -import D:\tools\we_decrypted.exe -noanalysis -scriptPath D:\tools\gh_scripts ^
+  -postScript DumpFunc.java -deleteProject
+
+:: 2) 官方存档字节对照（fixtures 已入库）
+python -c "import mpyq; a=mpyq.MPQArchive(r'D:\tools\exp\D6.w3m',listfile=False); open('D6.w3e','wb').write(a.read_file(b'war3map.w3e'))"
+
+:: 3) 回归
+cd standalone\W3EditorOfficialTest && dotnet run
+```
+
+## 5. 本会话的失败清单（按 `AGENTS.md` 保留，不掩盖）
+
+1. 用 `+x/+y` 猜坡道方向改实现 ⇒ ramp 匹配率 66%→18%，**已回退**
+2. 猜 `header=972 / W=64` ⇒ 坐标"两簇 + 半径 55"假象，**已纠正为 69 / 65**
+3. 批量 `BM_CLICK` 枚举 49 按钮 ⇒ 把 `形状` 改成正方形，后续 2 轮落笔全失效
+4. 在编辑器里做拖拽 ⇒ **平移视口**，导致固定像素失效
+5. 曾判定"本 build 无坡道/荒芜刷" ⇒ **错误**（它们是悬崖组子模式与纹理组特殊条目，见 §13/§16）
+6. 真机保存链路在半程后失效 ⇒ 相关观察全部保持 `未验证`，未升级为结论

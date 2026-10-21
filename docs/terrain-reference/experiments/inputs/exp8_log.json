@@ -1,0 +1,90 @@
+{
+ "steps": [
+  {
+   "name": "Y8A_sh1",
+   "note": "[A图] 浅水 s3 单击",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8A_sh_deep",
+   "note": "[A图] 浅水→深水",
+   "op": "deep",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8A_dp1",
+   "note": "[A图] 深水 s3 单击",
+   "op": "deep",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8A_dp_sh",
+   "note": "[A图] 深水→浅水",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8A_step2",
+   "note": "[A图] 升高 s3 ×2（台地）",
+   "op": "raise",
+   "size": 3,
+   "clicks": 2,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8A_step_water",
+   "note": "[A图] 台地上放浅水",
+   "op": "shallow",
+   "size": 3,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8B_ramp_on_step",
+   "note": "坡道@台阶角点(高侧)+s1标记",
+   "op": "ramp",
+   "size": 1,
+   "x": 1070,
+   "y": 802
+  },
+  {
+   "name": "Y8B_ramp_low_dx220",
+   "note": "坡道@低侧(+220px)+标记",
+   "op": "ramp",
+   "size": 1,
+   "dx": 220,
+   "dy": 0
+  },
+  {
+   "name": "Y8B_ramp_low_dy220",
+   "note": "坡道@低侧(0,+220px)+标记",
+   "op": "ramp",
+   "size": 1,
+   "dx": 0,
+   "dy": 220
+  },
+  {
+   "name": "Y8B_step2_s1",
+   "note": "cliff+1 s1 ×2（两层台阶）",
+   "op": "cliff+1",
+   "size": 1,
+   "clicks": 2
+  },
+  {
+   "name": "Y8B_ramp_diff2",
+   "note": "坡道@两层台阶角点（应拒绝）+标记",
+   "op": "ramp",
+   "size": 1
+  }
+ ]
+}
