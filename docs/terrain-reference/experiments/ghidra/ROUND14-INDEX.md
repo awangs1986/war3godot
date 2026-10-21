@@ -56,3 +56,24 @@ return 'H';
 
 本轮（round14）新增的 10 张为：
 `W5_deep`、`W8_deep`、`S32_cliff_p1`、`V3d_ramp`、`V3d_ramp2`、`E0_cliff`、`E0b_cliff`、`MIX_water_cliff`、`TEX_same`、`TEX_same2`
+
+---
+
+## 全文反编译已入库（round14 追加）
+
+以下 10 个 `.c` 均为 Ghidra 12.1.4 反编译原文转录（含切片参数与 Evidence ID 于文件头）：
+
+| 文件 | 对应函数 |
+|---|---|
+| `ghidra_3be230.c` | 唯一角点写入口 |
+| `ghidra_263b00.c` | 脏块收集 |
+| `ghidra_27f480.c` | 坡道合法性（表 0x1412E3654） |
+| `ghidra_27eb00.c` | 字母分类器 |
+| `ghidra_27ef50.c` | `t` = 3×3 邻域最高层 + flags 缓存位 |
+| `ghidra_2871f0.c` | 纹理 id→索引 |
+| `ghidra_285bc0.c` | 边界批量分发 |
+| `ghidra_285c40.c` | 渲染用边界位图 |
+| `ghidra_140145400.c` | 加权随机选择 |
+| `ghidra_286f40.c` | thunk（含全量汇编） |
+
+> 仍缺正文（正文未读，非漏提交）：`FUN_14027ECE0`、收尾链 6 个、`26C340`、`30B120`。
